@@ -1,6 +1,6 @@
 
 class Client():
-    client_name = ""
+    client_name = "123"
     client_response = ""
 
     def __init__(self, client_name = "Yushen"):
