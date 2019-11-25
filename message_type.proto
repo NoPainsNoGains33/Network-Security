@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+message COMM_MESSAGE {
+	enum TYPE {
+		CONFIRM = 0;
+	}
+	TYPE type = 1;
+	string payload = 2;
+}
