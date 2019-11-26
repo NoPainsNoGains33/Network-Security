@@ -2,9 +2,10 @@ import socket
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from message_type_pb2 import COMM_MESSAGE
+
 class Client():
-    client_name = " "
-    client_password = " "
+    client_name = None
+    client_password = None
     # client_response = " "
 
     def __init__(self, c_name, c_password):
