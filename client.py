@@ -1,4 +1,5 @@
 import socket
+import zmq
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from message_type_pb2 import COMM_MESSAGE
@@ -11,25 +12,27 @@ class Client():
         self.client_name = c_name
         self.client_password = c_password
 
-    def login(self):
-        #Setting up TCP connection
-        HOST = '127.0.0.1'  # The server's hostname or IP address
-        PORT = 9090  # The port used by the server
-        Message_send = COMM_MESSAGE
-        Message_send.type = COMM_MESSAGE.Type.LOGIN
-        Message_rec = COMM_MESSAGE
+    def connect_to_server (self):
+        context = zmq.Context()
+        socket = context.socket(zmq.REQ)
+        socket.bind("tcp://127.0.0.1:9090")
+        return socket
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((HOST, PORT))
-            s.send(Message_send.SerializeToString())
-            data = s.recv(1024)
-            Message_rec.ParseFromString(data)
+
+    def login(self, socket):
+        Message_send = COMM_MESSAGE
+        Message_send.type = COMM_MESSAGE.TYPE.LOGIN
+        # Message_send.N1 = 134
+        Message_rec = COMM_MESSAGE
+        temp = Message_send.SerializeToString()
+        socket.send(temp)
+        data = socket.recv()
+        Message_rec.ParseFromString(data)
+        for i in range (0,1000):
             digest = hashes.Hash(hashes.SHA256, backend=default_backend())
-            for i in range (0,1000):
-                digest.upgrate (i)
-                if Message_rec.N1_hash == digest.finalize ():
-                    break
-            # Now, know N1 is i
+            digest.upgrate (i)
+            if Message_rec.N1_hash == digest.finalize ():
+                return i
 
 
 
@@ -50,8 +53,8 @@ if __name__ == '__main__':
         client_password = input ()
         test_object = Client (client_name, client_password)
         print("The client name and password is", test_object.get_name())
-        test_object.login()
-
+        socket = test_object.connect_to_server()
+        print (test_object.login(socket))
 
 
         # # DH
