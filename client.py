@@ -1,7 +1,6 @@
 import socket
 import zmq
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes
+from hashlib import sha256
 from message_type_pb2 import COMM_MESSAGE
 class Client():
     client_name = " "
@@ -20,25 +19,17 @@ class Client():
 
 
     def login(self, socket):
-        Message_send = COMM_MESSAGE
+        Message_send = COMM_MESSAGE ()
         Message_send.type = COMM_MESSAGE.TYPE.LOGIN
-        # Message_send.N1 = 134
-        Message_rec = COMM_MESSAGE
-        temp = Message_send.SerializeToString()
-        socket.send(temp)
+        Message_rec = COMM_MESSAGE ()
+        socket.send(Message_send.SerializeToString())
         data = socket.recv()
         Message_rec.ParseFromString(data)
         for i in range (0,1000):
-            digest = hashes.Hash(hashes.SHA256, backend=default_backend())
-            digest.upgrate (i)
-            if Message_rec.N1_hash == digest.finalize ():
+            digest = sha256()
+            digest.update(str(i).encode())
+            if Message_rec.N1_hash == digest.hexdigest():
                 return i
-
-
-
-
-
-
 
     def get_name(self):
         return (self.client_name, self.client_password)
@@ -54,7 +45,7 @@ if __name__ == '__main__':
         test_object = Client (client_name, client_password)
         print("The client name and password is", test_object.get_name())
         socket = test_object.connect_to_server()
-        print (test_object.login(socket))
+        print ("The answer of the puzzle is:", test_object.login(socket))
 
 
         # # DH
