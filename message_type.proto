@@ -6,7 +6,13 @@ message COMM_MESSAGE {
 		LOGIN = 1;
 	}
 	TYPE type = 1;
-	int32 N1 = 4;
+	int32 N1 = 2;
 	string N1_hash = 3;
-	string payload = 2;
+	string gb_mod_p = 4;
+	bytes iv = 5;
+	bytes tag = 6;
+	bytes authenticate_data = 7;
+	string message = 8;
+	bytes cipher_text = 9;
+	bytes signature = 10;
 }
