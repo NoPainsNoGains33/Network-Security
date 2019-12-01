@@ -9,6 +9,7 @@ from cryptography.hazmat.primitives.asymmetric import padding as paddings
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives import hashes
+import time
 import zmq
 import sys
 import os
@@ -25,11 +26,14 @@ Message.ParseFromString(data)
 
 
 if Message.type == Message.TYPE.LOGIN:
-    N1 = 33
-    # Message.N1 = N1
+    N1 = os.urandom(16)
+    N1 = N1.hex()
+    print (N1)
+
     digest = sha256()
-    digest.update(str(N1).encode())
+    digest.update(N1.encode())
     Message.N1_hash = digest.hexdigest()
+    Message.message = N1[5:]
     socket.send (Message.SerializeToString())
 
     data = socket.recv()
@@ -57,20 +61,24 @@ if Message.type == Message.TYPE.LOGIN:
             backend=default_backend())
 
     #### encryption
-    # print ("Ga mod p =:", Message.message)
-    # print ("Gb mod p =:", Message.gb_mod_p)
-    plain_text = Message.message + "|" + Message.gb_mod_p
-    plain_text = plain_text.encode()
+    plain_text_sign = Message.message + "|" + Message.gb_mod_p
+    plain_text_sign  = plain_text_sign.encode()
     ### sign the text
     signature = private_key.sign(
-        plain_text,
+        plain_text_sign,
         paddings.PSS(
             mgf=paddings.MGF1(hashes.SHA256()),
             salt_length=paddings.PSS.MAX_LENGTH
         ),
         hashes.SHA256()
     )
-    Message.signature = signature
+    #### Timestamp
+    timestamp = str (int(time.time()))
+    timestamp = timestamp.encode()
+    plain_text = signature + timestamp
+
+
+
     iv = os.urandom(16)
     Message.iv = iv
     padder = padding.PKCS7(128).padder()
@@ -79,7 +87,7 @@ if Message.type == Message.TYPE.LOGIN:
     plain_text_padded = padded_data
 
     authenticate_data = b'Final Project'
-    Message.authenticate_data = authenticate_data
+    # Message.authenticate_data = authenticate_data
 
     # GCM Mode, we also need an IV
     # encrypt
@@ -87,24 +95,51 @@ if Message.type == Message.TYPE.LOGIN:
     encryptor = cipher.encryptor()
     encryptor.authenticate_additional_data(authenticate_data)
     cipher_text = encryptor.update(plain_text_padded) + encryptor.finalize()
-    # print (type (cipher_text))
     Message.cipher_text = cipher_text
     Message.tag = encryptor.tag
 
+    socket.send(Message.SerializeToString())
 
+    ### Decrypt and verify the client:
+    data = socket.recv()
+    Message.ParseFromString(data)
+    #  AES  decryption
+    decryptor = Cipher(algorithms.AES(Kas), modes.GCM(iv, Message.tag),
+                       backend=default_backend()).decryptor()
+    decryptor.authenticate_additional_data(authenticate_data)
+    decrypted_plain_text = decryptor.update(Message.cipher_text) + decryptor.finalize()
 
+    # unpad
+    unpadder = padding.PKCS7(128).unpadder()
+    plain_text = unpadder.update(decrypted_plain_text) + unpadder.finalize()
+
+    # Verify timestamp
+    plain_text_timestamp = plain_text[-10:]
+    plain_text = plain_text[0:len(plain_text) - 10]
+    plain_text = plain_text.decode()
+    username  =  plain_text.split("|")[0]
+    password = plain_text.split("|")[1]
+    if username == "Yushen" and password == "123":
+        verify = "Success"
+    else:
+        verify = "Fail"
+
+    plain_text =  verify.encode()
+    timestamp = str(int(time.time()))
+    timestamp = timestamp.encode()
+    plain_text = plain_text + timestamp
+
+    padder = padding.PKCS7(128).padder()
+    padded_data = padder.update(plain_text)
+    padded_data += padder.finalize()
+    plain_text_padded = padded_data
+
+    cipher = Cipher(algorithms.AES(Kas), modes.GCM(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+    encryptor.authenticate_additional_data(authenticate_data)
+    cipher_text = encryptor.update(plain_text_padded) + encryptor.finalize()
+    Message.cipher_text = cipher_text
+    Message.tag = encryptor.tag
 
     socket.send(Message.SerializeToString())
 
-
-
-    # print ("Length is:", len (Kas))
-    # Kas_true = bin(bob.shared_secret)[:128]
-    # print (type(Kas_true.encode()))
-    # print (Kas_true.encode())
-    #
-    # # Kas_true = int (Kas_true)
-    # print ("First 128bits is:", Kas_true)
-    # print ("Type:", type(Kas_true))
-    # print ("Length is:", len(Kas_true))
-    # print ("int is:", int.from_bytes (Kas_true.encode(), sys.byteorder))
