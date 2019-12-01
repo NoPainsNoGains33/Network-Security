@@ -10,6 +10,8 @@
 * sample files for reference are included in the reference script folder
 
 ### Problem found
+* Server: We need to shut down the thread if no response for some time, especially in login
+* Client: We need to raise exceptions when Server not respond for some time
 * In Login part:
   * Step 1-3: Server need to maintain the connection information of `Client` who wants to login
   * Step 4: 
