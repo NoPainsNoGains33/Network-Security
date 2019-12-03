@@ -2,6 +2,7 @@ import socket
 import zmq
 import sys
 import time
+from getpass import getpass
 from hashlib import sha256
 from message_type_pb2 import COMM_MESSAGE
 from diffiehellman.diffiehellman import DiffieHellman
@@ -23,6 +24,7 @@ class Client():
 
     def connect_to_server (self):
         self.socket_to_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket_to_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server_address = ('localhost', 9090)
         self.socket_to_server.connect(server_address)
         # context = zmq.Context()
@@ -193,10 +195,8 @@ class Client():
 
 
 if __name__ == '__main__':
-    print ("Please type your Username:")
-    client_name = input()
-    print ("Please type your Password:")
-    client_password = input ()
+    client_name = input("Please enter your username:")
+    client_password = getpass("Please enter your password:")
     test_object = Client (client_name, client_password)
     print("The client name and password is", test_object.get_name())
     test_object.client_to_server_login()
