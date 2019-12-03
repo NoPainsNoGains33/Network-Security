@@ -22,15 +22,18 @@ class Client():
         self.Message_rec = COMM_MESSAGE()
 
     def connect_to_server (self):
-        context = zmq.Context()
-        self.socket = context.socket(zmq.REQ)
-        self.socket.bind("tcp://127.0.0.1:9090")
+        self.socket_to_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_address = ('localhost', 9090)
+        self.socket_to_server.connect(server_address)
+        # context = zmq.Context()
+        # self.socket = context.socket(zmq.REQ)
+        # self.socket.bind("tcp://127.0.0.1:9090")
     
     def send_message (self):
-        self.socket.send(self.Message_send.SerializeToString())
+        self.socket_to_server.sendall(self.Message_send.SerializeToString())
 
     def receive_message (self):
-        data = self.socket.recv()
+        data = self.socket_to_server.recv(4096)
         self.Message_rec.ParseFromString(data)
 
     def verify_timestamp  (self, timestamp):
@@ -167,9 +170,26 @@ class Client():
         test_object.puzzle()
         test_object.session()
         test_object.login()
+        self.socket_to_server.close()
 
     def get_name(self):
         return self.client_name, self.client_password
+
+    def user_send  (self):
+        self.Message_send = COMM_MESSAGE()
+        while (True):
+            command = input()
+            if (command ==  "list"):
+                self.Message_send.type = COMM_MESSAGE.TYPE.LIST
+                plain_text = str(int (time.time())).encode ()
+                self.encryption(plain_text)
+                self.send_message()
+                self.receive_message()
+                plain_text = self.decryption_with_timestamp()
+                plain_text.decode()
+
+
+
 
 
 if __name__ == '__main__':
@@ -180,4 +200,6 @@ if __name__ == '__main__':
     test_object = Client (client_name, client_password)
     print("The client name and password is", test_object.get_name())
     test_object.client_to_server_login()
+
+
 

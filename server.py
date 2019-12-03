@@ -1,4 +1,4 @@
-import socket
+
 from cryptography.hazmat.backends import default_backend
 from hashlib import sha256
 from message_type_pb2 import COMM_MESSAGE
@@ -13,15 +13,27 @@ import time
 import zmq
 import sys
 import os
+import socket
 from diffiehellman.diffiehellman import DiffieHellman
 
-context = zmq.Context()
-socket = context.socket(zmq.REP)
-socket.connect("tcp://localhost:9090")
+socket_from_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+serveraddress = ('localhost',9090)
+socket_from_client.bind(serveraddress)
+
+socket_from_client.listen(1)
+connection_from_client, client_address = socket_from_client.accept()
+# print (connection_from_client[0])
+# print (connection_from_client[1])
+print (connection_from_client)
+print (connection_from_client.getpeername())
+print (connection_from_client.getsockname())
+print (client_address)
+
 
 Message = COMM_MESSAGE()
 
-data = socket.recv()
+data, temp = connection_from_client.recvfrom(4096)
+print (temp)
 Message.ParseFromString(data)
 
 
@@ -34,9 +46,10 @@ if Message.type == Message.TYPE.LOGIN:
     digest.update(N1.encode())
     Message.N1_hash = digest.hexdigest()
     Message.message = N1[5:]
-    socket.send (Message.SerializeToString())
+    connection_from_client.sendall (Message.SerializeToString())
 
-    data = socket.recv()
+    data, temp = connection_from_client.recvfrom(4096)
+    print (temp)
     Message.ParseFromString(data)
 
     if Message.N1 == N1:
@@ -98,10 +111,10 @@ if Message.type == Message.TYPE.LOGIN:
     Message.cipher_text = cipher_text
     Message.tag = encryptor.tag
 
-    socket.send(Message.SerializeToString())
+    connection_from_client.sendall(Message.SerializeToString())
 
     ### Decrypt and verify the client:
-    data = socket.recv()
+    data = connection_from_client.recv(4096)
     Message.ParseFromString(data)
     #  AES  decryption
     decryptor = Cipher(algorithms.AES(Kas), modes.GCM(iv, Message.tag),
@@ -141,5 +154,9 @@ if Message.type == Message.TYPE.LOGIN:
     Message.cipher_text = cipher_text
     Message.tag = encryptor.tag
 
-    socket.send(Message.SerializeToString())
+    connection_from_client.sendall(Message.SerializeToString())
+# connection_from_client.shutdown(0)
+# socket_from_client.shutdown(0)
+connection_from_client.close()
+socket_from_client.close()
 
