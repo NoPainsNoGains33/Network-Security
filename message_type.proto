@@ -3,7 +3,14 @@ syntax = "proto3";
 message COMM_MESSAGE {
 	enum TYPE {
 		CONFIRM = 0;
+		LOGIN = 1;
 	}
 	TYPE type = 1;
-	string payload = 2;
+	string N1 = 2;
+	string N1_hash = 3;
+	string gb_mod_p = 4;
+	bytes iv = 5;
+	bytes tag = 6;
+	string message = 7;
+	bytes cipher_text = 8;
 }

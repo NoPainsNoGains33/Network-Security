@@ -1,0 +1,4 @@
+# Ignore pycache
+__pycache__/
+# Ignore the generated protobuf py, maybe different for different architectures
+*_pb2.py
