@@ -17,3 +17,7 @@
   * Step 4: 
     1. What if someone change gb mod p?
     2. Since iv, tag, signature, authenticate_data not encrypted, what if someone change these?
+    
+ ### Notice
+ * I have changed the puzzle from 0-26bit in total 27 bits into 20bits, which balance the running time and the difficulty of the puzzle
+ * In the server demo, only can verify `username` is "Yushen" and `password` is "123"
