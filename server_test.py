@@ -10,7 +10,7 @@ class MyServer(socketserver.BaseRequestHandler):
     # Define handle and the function name MUST be handle
     def handle(self):
         conn = self.request
-        print  (conn)
+        print (conn)
         conn.sendall(bytes("Welcome！\nType q to end the chatting！", encoding='utf-8'))
         while True:
             ret = str(conn.recv(1024), encoding='utf-8')
