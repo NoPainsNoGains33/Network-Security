@@ -4,6 +4,8 @@ message COMM_MESSAGE {
 	enum TYPE {
 		CONFIRM = 0;
 		LOGIN = 1;
+		LIST = 2;
+		LIST_PART2 = 3;
 	}
 	TYPE type = 1;
 	string N1 = 2;
