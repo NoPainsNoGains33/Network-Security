@@ -2,7 +2,7 @@ import socket
 import zmq
 import sys
 import time
-from getpass import getpass
+import threading
 from hashlib import sha256
 from message_type_pb2 import COMM_MESSAGE
 from diffiehellman.diffiehellman import DiffieHellman
@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives import hashes
+
 
 class Client():
 
@@ -24,7 +25,6 @@ class Client():
 
     def connect_to_server (self):
         self.socket_to_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket_to_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server_address = ('localhost', 9090)
         self.socket_to_server.connect(server_address)
         # context = zmq.Context()
@@ -166,40 +166,126 @@ class Client():
         plain_text = self.decryption_with_timestamp()
         plain_text = plain_text.decode ()
         print (plain_text)
+        if (plain_text == 'Fail'):
+            sys.exit(1)
+        else:
+            self.port_for_listening =  int (plain_text.split("|")[1])
 
     def client_to_server_login (self):
         test_object.connect_to_server()
         test_object.puzzle()
         test_object.session()
         test_object.login()
-        self.socket_to_server.close()
+        # self.socket_to_server.close()
 
     def get_name(self):
         return self.client_name, self.client_password
 
-    def user_send  (self):
-        self.Message_send = COMM_MESSAGE()
+    def bind_for_listening(self):
+        self.socket_to_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket_to_client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket_to_client.bind(("127.0.0.1", self.port_for_listening))
+
+    def handle_sock(self, sock, addr):  # sock 的流程
+        # print ("Listen to ", addr, "starts!")
+        while True:
+            ret = str(sock.recv(1024), encoding='utf-8')
+            if ret == 'q':
+                break
+            else:
+                print("From:", addr, ": ", ret)
+        sock.close()
+
+    def listen (self, temp):
+        self.socket_to_client.listen()
+        # print ("I have succeed in start listening socket")
+        while True:
+            sock, addr = self.socket_to_client.accept()  # 接受不同client 端的sock .
+            # print ("I received a new socket request from", sock)
+            # self.handle_sock(sock, addr)
+            client_thread = threading.Thread(target=self.handle_sock, args=(sock, addr))  # 把sock 加入线程内
+            client_thread.start()  # 启动线程
+
+    # def send (self,temp):
+    #     while True:
+    #         inp = input()
+    #         # print ("I have received the command: ", inp)
+    #         Dest = inp.split(" ")[1]
+    #         # print (Dest)
+    #         if Dest not in socket_list.keys():
+    #             client_sk = socket.socket()
+    #             client_sk.connect(('127.0.0.1', port_list[Dest]))
+    #             socket_list[Dest] = client_sk
+    #             # print("Now, in the socket list,", socket_list.keys())
+    #             # print ("I will send information to ", socket_list[Dest])
+    #         socket_list[Dest].sendall(bytes(inp.split(" ")[2], encoding='utf-8'))
+    #         # print ("I have send ", inp.split(" ")[2])
+    #         if inp == 'q':
+    #             break
+    #     # close the connection
+    #     for temp in socket_list.keys():
+    #         socket_list[temp].close()
+        # client_sk.close()
+
+    def talk_with_server  (self):
+        listen_thread = threading.Thread(target=test_object.listen, args=(1,))
+        listen_thread.start()
+        self.user_online  = {}
+        self.socket_using = {}
+
         while (True):
+            self.Message_send = COMM_MESSAGE()
             command = input()
             if (command ==  "list"):
                 self.Message_send.type = COMM_MESSAGE.TYPE.LIST
-                plain_text = str(int (time.time())).encode ()
+                plain_text = command.encode() + str(int (time.time())).encode()
                 self.encryption(plain_text)
                 self.send_message()
                 self.receive_message()
                 plain_text = self.decryption_with_timestamp()
                 plain_text.decode()
+                print ("This users are online now:", plain_text)
+                # update the online user
+                for temp in plain_text.split(" "):
+                    if temp not in self.user_online.keys():
+                        self.user_online[temp] = None
+            else:
+                if (len (command.split(" ")) ==3 and "Talk to" in command):
+                    dest = command.split(" ")[2]
+                    if (dest not in self.user_online.keys()):
+                        print (dest, " is not online now!")
+                        continue
+                    else:
+                        self.Message_send.type = COMM_MESSAGE.TYPE.LIST_PART2
+                        plain_text = command.encode() + str(int(time.time())).encode()
+                        self.encryption(plain_text)
+                        self.send_message()
+                        self.receive_message()
+                        plain_text = self.decryption_with_timestamp()
+                        plain_text.decode()
+                        self.user_online[plain_text.split(" ")[0]] = int (plain_text.split(" ")[1])
+                # else:
+                #     if (command.split(" ")[0] == 'Send'):
+                #         if (command.split(" ")[1] not in self.user_online.keys()):
+                #             print ()
+
+
 
 
 
 
 
 if __name__ == '__main__':
-    client_name = input("Please enter your username:")
-    client_password = getpass("Please enter your password:")
+    print ("Please type your Username:")
+    client_name = input()
+    print ("Please type your Password:")
+    client_password = input ()
     test_object = Client (client_name, client_password)
     print("The client name and password is", test_object.get_name())
     test_object.client_to_server_login()
+    print ("Now, send message!")
+    test_object.bind_for_listening()
+    test_object.talk_with_server()
 
-
-
+send_thread = threading.Thread(target=test_object.send, args=(1,))
+send_thread.start()
