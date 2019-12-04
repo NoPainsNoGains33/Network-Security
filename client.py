@@ -1,8 +1,8 @@
 import socket
-import zmq
 import sys
 import time
 import threading
+from getpass import getpass
 from hashlib import sha256
 from message_type_pb2 import COMM_MESSAGE
 from diffiehellman.diffiehellman import DiffieHellman
@@ -276,10 +276,8 @@ class Client():
 
 
 if __name__ == '__main__':
-    print ("Please type your Username:")
-    client_name = input()
-    print ("Please type your Password:")
-    client_password = input ()
+    client_name = input("Please type your username:")
+    client_password = getpass("Please type your password:")
     test_object = Client (client_name, client_password)
     print("The client name and password is", test_object.get_name())
     test_object.client_to_server_login()

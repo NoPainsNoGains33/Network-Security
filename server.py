@@ -98,7 +98,7 @@ class Server():
             return True
         return False
 
-    def login_proto(self, message, connection_from_client):
+    def connection_ini_proto(self, message, connection_from_client):
         ####################################
         ## Message 1: Send and receive N1 ##
         ####################################
@@ -188,6 +188,9 @@ class Server():
         message_to_send = self.get_ciphertext_message(cipher_params, plain_text_padded, message)
         connection_from_client.sendall(message_to_send.SerializeToString())
         self.identities[username]["is_online"] = True
+        # while True:
+        #     message = self.receive_message(connection_from_client)
+        #     if message.type == message.TYPE.
 
     def __init__(self):
         try: 
@@ -199,7 +202,7 @@ class Server():
                 message = self.receive_message(connection_from_client)
                 if message.type == message.TYPE.LOGIN:
                     self.logger.debug(f"Received login message from {client_address}")
-                    login_thread = Thread(target = self.login_proto, args = (message, connection_from_client))
+                    login_thread = Thread(target = self.connection_ini_proto, args = (message, connection_from_client))
                     self.logger.debug(f"Starting login protocol thread for {client_address}")
                     login_thread.start() 
                     continue
