@@ -21,3 +21,4 @@
  ### Notice
  * I have changed the puzzle from 0-26bit in total 27 bits into 20bits, which balance the running time and the difficulty of the puzzle
  * In the server demo, only can verify `username` is "Yushen" and `password` is "123"
+ * If Client want to talk to other client, he must ask Server list and talk to first.
