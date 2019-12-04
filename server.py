@@ -41,6 +41,7 @@ class Server():
         for user in self.identities.keys():
             self.identities[user]["is_online"] = False
             self.identities[user]["ip_address"] = None
+            self.identities[user]["serverclient_key"] = None
 
     def set_server_socket(self):
         self.socket_from_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -195,6 +196,7 @@ class Server():
         connection_from_client.sendall(message_to_send.SerializeToString())
         self.identities[username]["is_online"] = True
         self.identities[username]["ip_address"] = connection_from_client.getpeername()[0]
+        self.identities[username]["serverclient_key"] = Kas
 
         while True:
             try:
@@ -207,10 +209,13 @@ class Server():
                 ########################
                 if message.type == message.TYPE.LIST:
                     self.logger.debug(f"{connection_from_client.getpeername()}: Received LIST message")
-                    ## Uhh, why send "list"?
                     if (text_string == "list" and self.verify_timestamp(timestamp_string)):
                         data_string = " ".join(name for name in self.identities.keys() if self.identities[name]["is_online"])
                         self.logger.debug(f"{connection_from_client.getpeername()}: Sending online user list\n\t[{data_string}]")
+                        response_string = data_string.encode() + self.get_timestamp().encode()
+                        padded_response_string = self.get_padded_data(response_string)
+                        message_to_send = self.get_ciphertext_message(cipher_params, padded_response_string, message)
+                        connection_from_client.sendall(message_to_send.SerializeToString())
                     else:
                         raise ValidationError("Command or timestamp incorrect")
                 ##########################
@@ -220,15 +225,51 @@ class Server():
                     self.logger.debug(f"{connection_from_client.getpeername()}: Received LIST_2 message")
                     user = text_string.split(" ")[2]
                     if (self.identities[user]["is_online"] and self.verify_timestamp(timestamp_string)):
-                        ## Send IP too?
-                        data_string = " ".join([user, str(self.identities[user]["port"])])
+                        ## Generate a new Kab
+                        kab = os.urandom(16)
+                        kab_string = kab.hex()[:16]
+                        ## Generate a new iv
+                        ticket_iv = os.urandom(16)
+                        ticket_iv_string = ticket_iv.hex()[:16]
+                        ## Get serverclient key for the user requested
+                        ticket_enc_key = self.identities[user]["serverclient_key"]
+                        ## Create new encryption for the ticket
+                        ## Key will be Kbs
+                        ## Get encrypted ticket
+                        #########################################
+                        ticket_cipher = Cipher(algorithms.AES(ticket_enc_key), modes.GCM(ticket_iv), backend=default_backend())
+                        ticket_encryptor = ticket_cipher.encryptor()
+                        ticket_encryptor.authenticate_additional_data(cipher_params["auth_string"])
+                        ticket_string = " ".join([username, kab_string, ticket_iv_string, self.get_timestamp()])
+                        ticket_string = ticket_string.encode()
+                        padded_ticket_string = self.get_padded_data(ticket_string)
+                        ticket_ciphertext = ticket_encryptor.update(padded_ticket_string) + ticket_encryptor.finalize()
+                        #############################################
+                        data_string = " ".join([user, str(self.identities[user]["port"]), kab_string, ticket_iv_string])
+                        response_string = data_string.encode()                        
                         self.logger.debug(f"{connection_from_client.getpeername()}: Sending contact info for {data_string}")
+                        padded_response_string = self.get_padded_data(response_string)
+                        message_to_send = self.get_ciphertext_message(cipher_params, padded_response_string, message)
+                        message_to_send.ticket = ticket_ciphertext
+                        message_to_send.ticket_tag = ticket_encryptor.tag
+                        connection_from_client.sendall(message_to_send.SerializeToString())
                     else:
                         raise ValidationError("User not online or timestamp incorrect")
-                response_string = data_string.encode() + self.get_timestamp().encode()
-                padded_response_string = self.get_padded_data(response_string)
-                message_to_send = self.get_ciphertext_message(cipher_params, padded_response_string, message)
-                connection_from_client.sendall(message_to_send.SerializeToString())
+                ##########################
+                ## Message Type: LOGOUT ##
+                ##########################
+                if message.type == message.TYPE.LIST:
+                    self.logger.debug(f"{connection_from_client.getpeername()}: Received LOGOUT message")
+                    if (text_string == "logout" and self.verify_timestamp(timestamp_string)):
+                        self.identities["is_online"] = False
+                        data_string = "confirmed"
+                        self.logger.debug(f"{connection_from_client.getpeername()}: Logging out")
+                        response_string = data_string.encode() + self.get_timestamp().encode()
+                        padded_response_string = self.get_padded_data(response_string)
+                        message_to_send = self.get_ciphertext_message(cipher_params, padded_response_string, message)
+                        connection_from_client.sendall(message_to_send.SerializeToString())
+                    else:
+                        raise ValidationError("Command or timestamp incorrect")
             except ValidationError as validation_error:
                 ## Send error to client here
                 self.logger.error(f"{connection_from_client}: {validation_error}")

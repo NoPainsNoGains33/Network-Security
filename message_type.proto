@@ -6,6 +6,7 @@ message COMM_MESSAGE {
 		LOGIN = 1;
 		LIST = 2;
 		LIST_PART2 = 3;
+		LOGOUT = 4;
 	}
 	TYPE type = 1;
 	string N1 = 2;
@@ -15,4 +16,6 @@ message COMM_MESSAGE {
 	bytes tag = 6;
 	string message = 7;
 	bytes cipher_text = 8;
+	bytes ticket = 9;
+	bytes ticket_tag = 10;
 }
