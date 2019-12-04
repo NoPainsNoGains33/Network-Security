@@ -22,17 +22,21 @@ from datetime import datetime
 from sys import stdout
 from diffiehellman.diffiehellman import DiffieHellman
 
+
 class ValidationError(Exception):
     pass
 
-class Server():
 
+class Server():
     identities = None
     socket_from_client = None
     logger = None
 
     def get_logger(self):
-        logging.basicConfig(format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s", level = logging.DEBUG, handlers = [logging.FileHandler(filename = datetime.now().strftime("%H_%M_%d_%m_%Y_") + "server.log"), logging.StreamHandler(stdout)])
+        logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.DEBUG,
+                            handlers=[
+                                logging.FileHandler(filename=datetime.now().strftime("%H_%M_%d_%m_%Y_") + "server.log"),
+                                logging.StreamHandler(stdout)])
         self.logger = logging.getLogger()
 
     def load_user_data(self):
@@ -42,11 +46,12 @@ class Server():
             self.identities[user]["is_online"] = False
             self.identities[user]["ip_address"] = None
             self.identities[user]["serverclient_key"] = None
+            self.identities[user]["serverclient_iv"] = None
 
     def set_server_socket(self):
         self.socket_from_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket_from_client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        serveraddress = ('localhost',9090)
+        serveraddress = ('localhost', 9090)
         self.socket_from_client.bind(serveraddress)
         self.socket_from_client.listen(1)
         return self.socket_from_client
@@ -87,7 +92,8 @@ class Server():
         return message
 
     def get_plaintext_from_message(self, cipher_params, message):
-        decryptor = Cipher(algorithms.AES(cipher_params["key"]), modes.GCM(cipher_params["iv"], message.tag), backend=default_backend()).decryptor()
+        decryptor = Cipher(algorithms.AES(cipher_params["key"]), modes.GCM(cipher_params["iv"], message.tag),
+                           backend=default_backend()).decryptor()
         decryptor.authenticate_additional_data(cipher_params["auth_string"])
         decrypted_plain_text = decryptor.update(message.cipher_text) + decryptor.finalize()
         return decrypted_plain_text
@@ -98,7 +104,7 @@ class Server():
         return (message_string.decode(), ts_string.decode())
 
     def verify_timestamp(self, timestamp_string):
-        message_timestamp = int (timestamp_string)
+        message_timestamp = int(timestamp_string)
         if ((int(time.time()) - message_timestamp) < 60):
             return True
         return False
@@ -113,7 +119,7 @@ class Server():
         N1 = self.generate_n1()
         message.N1_hash = self.get_hash(N1)
         message.message = N1[5:]
-        connection_from_client.sendall (message.SerializeToString())
+        connection_from_client.sendall(message.SerializeToString())
         message = self.receive_message(connection_from_client)
         self.logger.debug(f"{connection_from_client.getpeername()}:: Received N1")
 
@@ -126,23 +132,24 @@ class Server():
         ##################################################
         bob = DiffieHellman(group=5, key_length=200)
         bob.generate_public_key()
-        message.gb_mod_p = str (bob.public_key)
-        bob.generate_shared_secret(int (message.message))
-        Kas =  str(bob.shared_secret)[:16].encode()
-        print ("Shared secret is:", int.from_bytes (Kas, sys.byteorder))
-        self.logger.debug(f"{connection_from_client.getpeername()}:: Shared secret is:{int.from_bytes (Kas, sys.byteorder)}")
-        message.gb_mod_p = str (bob.public_key)
-        
+        message.gb_mod_p = str(bob.public_key)
+        bob.generate_shared_secret(int(message.message))
+        Kas = str(bob.shared_secret)[:16].encode()
+        print("Shared secret is:", int.from_bytes(Kas, sys.byteorder))
+        self.logger.debug(
+            f"{connection_from_client.getpeername()}:: Shared secret is:{int.from_bytes(Kas, sys.byteorder)}")
+        message.gb_mod_p = str(bob.public_key)
+
         #### loading private key
         with open("private_key.pem", "rb") as key_file:
             private_key = serialization.load_pem_private_key(
                 key_file.read(),
                 password=None,
                 backend=default_backend())
-        
+
         #### encryption
         plain_text_sign = message.message + "|" + message.gb_mod_p
-        plain_text_sign  = plain_text_sign.encode()
+        plain_text_sign = plain_text_sign.encode()
         ### sign the text
         signature = private_key.sign(
             plain_text_sign,
@@ -153,7 +160,7 @@ class Server():
             hashes.SHA256()
         )
         #### Timestamp
-        timestamp = str (int(time.time()))
+        timestamp = str(int(time.time()))
         timestamp = timestamp.encode()
         plain_text = signature + timestamp
 
@@ -161,9 +168,9 @@ class Server():
         message.iv = iv
         plain_text_padded = self.get_padded_data(plain_text)
 
-        authenticate_data = b'Final Project' 
+        authenticate_data = b'Final Project'
         # Cipher parameters to facilitate encryption and decryption
-        cipher_params = {"key":Kas, "iv": iv, "auth_string": authenticate_data}
+        cipher_params = {"key": Kas, "iv": iv, "auth_string": authenticate_data}
 
         message_to_send = self.get_ciphertext_message(cipher_params, plain_text_padded, message)
         connection_from_client.sendall(message_to_send.SerializeToString())
@@ -178,7 +185,7 @@ class Server():
             self.logger.debug(f"{connection_from_client.getpeername()}:: Timestamp verified!")
         else:
             self.logger.error(f"{connection_from_client.getpeername()}:: Timestamp failed!")
-        username  =  text_string.split("|")[0]
+        username = text_string.split("|")[0]
         password = text_string.split("|")[1]
         verify = "Fail"
         if username in self.identities.keys():
@@ -186,10 +193,10 @@ class Server():
             if pass_hash == self.identities[username]["passhash"]:
                 verify = "Success|" + str(self.identities[username]["port"])
 
-        plain_text =  verify.encode()
+        plain_text = verify.encode()
         timestamp = self.get_timestamp().encode()
         plain_text = plain_text + timestamp
-        
+
         plain_text_padded = self.get_padded_data(plain_text)
 
         message_to_send = self.get_ciphertext_message(cipher_params, plain_text_padded, message)
@@ -197,6 +204,7 @@ class Server():
         self.identities[username]["is_online"] = True
         self.identities[username]["ip_address"] = connection_from_client.getpeername()[0]
         self.identities[username]["serverclient_key"] = Kas
+        self.identities[username]["serverclient_iv"] = iv
 
         while True:
             try:
@@ -210,8 +218,10 @@ class Server():
                 if message.type == message.TYPE.LIST:
                     self.logger.debug(f"{connection_from_client.getpeername()}: Received LIST message")
                     if (text_string == "list" and self.verify_timestamp(timestamp_string)):
-                        data_string = " ".join(name for name in self.identities.keys() if self.identities[name]["is_online"])
-                        self.logger.debug(f"{connection_from_client.getpeername()}: Sending online user list\n\t[{data_string}]")
+                        data_string = " ".join(
+                            name for name in self.identities.keys() if self.identities[name]["is_online"])
+                        self.logger.debug(
+                            f"{connection_from_client.getpeername()}: Sending online user list\n\t[{data_string}]")
                         response_string = data_string.encode() + self.get_timestamp().encode()
                         padded_response_string = self.get_padded_data(response_string)
                         message_to_send = self.get_ciphertext_message(cipher_params, padded_response_string, message)
@@ -229,15 +239,18 @@ class Server():
                         kab = os.urandom(16)
                         kab_string = kab.hex()[:16]
                         ## Generate a new iv
-                        ticket_iv = os.urandom(16)
-                        ticket_iv_string = ticket_iv.hex()[:16]
+                        ticket_iv = self.identities[user]["serverclient_iv"]
+                        print (ticket_iv)
+                        ivtemp =os.urandom(16)
+                        ticket_iv_string = ivtemp.hex()[:16] ### iv ab
                         ## Get serverclient key for the user requested
                         ticket_enc_key = self.identities[user]["serverclient_key"]
                         ## Create new encryption for the ticket
                         ## Key will be Kbs
                         ## Get encrypted ticket
                         #########################################
-                        ticket_cipher = Cipher(algorithms.AES(ticket_enc_key), modes.GCM(ticket_iv), backend=default_backend())
+                        ticket_cipher = Cipher(algorithms.AES(ticket_enc_key), modes.GCM(ticket_iv),
+                                               backend=default_backend())
                         ticket_encryptor = ticket_cipher.encryptor()
                         ticket_encryptor.authenticate_additional_data(cipher_params["auth_string"])
                         ticket_string = " ".join([username, kab_string, ticket_iv_string, self.get_timestamp()])
@@ -246,12 +259,17 @@ class Server():
                         ticket_ciphertext = ticket_encryptor.update(padded_ticket_string) + ticket_encryptor.finalize()
                         #############################################
                         data_string = " ".join([user, str(self.identities[user]["port"]), kab_string, ticket_iv_string])
-                        response_string = data_string.encode()                        
-                        self.logger.debug(f"{connection_from_client.getpeername()}: Sending contact info for {data_string}")
+                        response_string = data_string.encode()
+                        self.logger.debug(
+                            f"{connection_from_client.getpeername()}: Sending contact info for {data_string}")
                         padded_response_string = self.get_padded_data(response_string)
                         message_to_send = self.get_ciphertext_message(cipher_params, padded_response_string, message)
                         message_to_send.ticket = ticket_ciphertext
                         message_to_send.ticket_tag = ticket_encryptor.tag
+                        # print("Kas:", ticket_enc_key )
+                        # print("IV:", ticket_iv)
+                        # print ("Ticket:", message_to_send.ticket)
+                        # print ("Ticket_tag: ", message_to_send.ticket_tag)
                         connection_from_client.sendall(message_to_send.SerializeToString())
                     else:
                         raise ValidationError("User not online or timestamp incorrect")
@@ -275,7 +293,7 @@ class Server():
                 self.logger.error(f"{connection_from_client}: {validation_error}")
 
     def __init__(self):
-        try: 
+        try:
             self.get_logger()
             self.load_user_data()
             self.logger.debug(f"Server socket set: {self.set_server_socket()}")
@@ -284,14 +302,15 @@ class Server():
                 message = self.receive_message(connection_from_client)
                 if message.type == message.TYPE.LOGIN:
                     self.logger.debug(f"Received login message from {client_address}")
-                    login_thread = Thread(target = self.connection_ini_proto, args = (message, connection_from_client))
+                    login_thread = Thread(target=self.connection_ini_proto, args=(message, connection_from_client))
                     self.logger.debug(f"Starting login protocol thread for {client_address}")
-                    login_thread.start() 
+                    login_thread.start()
                     continue
 
         except (KeyboardInterrupt) as fatal_exception:
             self.logger.critical("Program exiting, closing main socket!")
             self.socket_from_client.close()
+
 
 if __name__ == '__main__':
     server = Server()
