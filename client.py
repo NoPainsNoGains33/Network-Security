@@ -332,6 +332,7 @@ class Client():
         MessageRec = COMM_MESSAGE ()
         MessageSend.type = COMM_MESSAGE.TYPE.CLIENT_TO_CLIENT
         MessageSend.ticket = self.user_online[dest][4]
+        MessageSend.ticket_tag = self.user_online[dest][5]
         kabtemp = self.user_online[dest][2].encode()
         MessageSend.iv = self.user_online[dest][3].encode()
         y = os.urandom(8)
@@ -424,13 +425,15 @@ class Client():
                             self.send_message()
                             self.receive_message()
                             plain_text = self.decryption_with_timestamp()
-                            ticket = self.decryption_of_ticket()
+                            ticket = self.Message_rec.ticket
+                            ticket_tag = self.Message_rec.ticket_tag
                             plain_text = plain_text.decode()
                             print (plain_text)
                             if dest == plain_text.split(" ")[0]:
                                 for item in plain_text.split(" "):
                                     self.user_online[dest].append(item)
                                 self.user_online[dest].append(ticket)
+                                self.user_online[dest].append(ticket_tag)
                                 print ("Now, u can talk to", dest, "whose port is", int(self.user_online[dest][1]))
                             else:
                                 print ("Someone change the person I want to talk to!")
@@ -439,7 +442,7 @@ class Client():
                         print ("Sorry, you can't talk to yourself!")
                         continue
                 else:
-                    if (command.split(" ")[0] == 'Send'):
+                    if (command.split(" ")[0] == 'Send' and len(command.split(" ")) >=3):
                         dest = command.split(" ")[1]
                         message = command.split(" ",2)[2]
                         if (dest not in self.user_online.keys()):
@@ -453,6 +456,9 @@ class Client():
                                 if dest not in self.socket_list.keys():
                                     self.client_setup_connection (dest,message)
                                 self.client_to_client_send(dest, message)
+                    else:
+                        print ("Please type a correct format!")
+                        continue
             print("Now, I have stored these users with/without port:", self.user_online)
 
 
