@@ -243,7 +243,7 @@ class Client():
                 self.send_message()
                 self.receive_message()
                 plain_text = self.decryption_with_timestamp()
-                plain_text.decode()
+                plain_text = plain_text.decode()
                 print ("This users are online now:", plain_text)
                 # update the online user
                 for temp in plain_text.split(" "):
@@ -262,7 +262,7 @@ class Client():
                         self.send_message()
                         self.receive_message()
                         plain_text = self.decryption_with_timestamp()
-                        plain_text.decode()
+                        plain_text = plain_text.decode()
                         self.user_online[plain_text.split(" ")[0]] = int (plain_text.split(" ")[1])
                 # else:
                 #     if (command.split(" ")[0] == 'Send'):
