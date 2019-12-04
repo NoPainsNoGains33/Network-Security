@@ -1,19 +1,26 @@
 {
 	"Ryan": {
 		"passhash": "5a36750440995a09fe0ced33212479460511547989ac9ec8712a8ce0fcb27810",
-		"salt": "sdavsadfa"
+		"salt": "sdavsadfa",
+		"port": 7049
 	},
 	"Yushen": {
 		"passhash": "764e65c32d81eb0902afebc4049cdc4e521f23a2928d9a4661297abc786e8ac0",
-		"salt": "dsadasdasd"
+		"salt": "dsadasdasd",
+		"port": 9921
+
 	},
 	"Alice": {
 		"passhash": "54107bee4f9c7439a552c7f9fa5725bdfec0ba639f136d25bdbd5125460c61fc",
-		"salt": "afsvsgasgsv"
+		"salt": "afsvsgasgsv",
+		"port": 9643
+
 	},
 	"Bob": {
 		"passhash": "bb1e86cb740a75f6b0cb0e5295371f1a775fee45d43ae277ba74739306734f2d",
-		"salt": "adfssvsvsvvfsdf"
+		"salt": "adfssvsvsvvfsdf",
+		"port": 8604
+
 	}
 }
 
