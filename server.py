@@ -22,6 +22,9 @@ from datetime import datetime
 from sys import stdout
 from diffiehellman.diffiehellman import DiffieHellman
 
+class ValidationError(Exception):
+    pass
+
 class Server():
 
     identities = None
@@ -37,6 +40,7 @@ class Server():
             self.identities = json.loads(creds.read())
         for user in self.identities.keys():
             self.identities[user]["is_online"] = False
+            self.identities[user]["ip_address"] = None
 
     def set_server_socket(self):
         self.socket_from_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -90,13 +94,16 @@ class Server():
     def get_plaintext_ts(self, decrypted_string):
         message_string = decrypted_string[0:len(decrypted_string) - 10]
         ts_string = decrypted_string[-10:]
-        return (message_string.decode(), ts_string)
+        return (message_string.decode(), ts_string.decode())
 
     def verify_timestamp(self, timestamp_string):
         message_timestamp = int (timestamp_string)
         if ((int(time.time()) - message_timestamp) < 60):
             return True
         return False
+
+    def get_timestamp(self):
+        return str(int(time.time()))
 
     def connection_ini_proto(self, message, connection_from_client):
         ####################################
@@ -179,8 +186,7 @@ class Server():
                 verify = "Success|" + str(self.identities[username]["port"])
 
         plain_text =  verify.encode()
-        timestamp = str(int(time.time()))
-        timestamp = timestamp.encode()
+        timestamp = self.get_timestamp().encode()
         plain_text = plain_text + timestamp
         
         plain_text_padded = self.get_padded_data(plain_text)
@@ -188,9 +194,44 @@ class Server():
         message_to_send = self.get_ciphertext_message(cipher_params, plain_text_padded, message)
         connection_from_client.sendall(message_to_send.SerializeToString())
         self.identities[username]["is_online"] = True
-        # while True:
-        #     message = self.receive_message(connection_from_client)
-        #     if message.type == message.TYPE.
+        self.identities[username]["ip_address"] = connection_from_client.getpeername()[0]
+
+        while True:
+            try:
+                message = self.receive_message(connection_from_client)
+                decrypted_plain_text = self.get_plaintext_from_message(cipher_params, message)
+                plain_text = self.get_unpadded_data(decrypted_plain_text)
+                text_string, timestamp_string = self.get_plaintext_ts(plain_text)
+                ########################
+                ## Message Type: LIST ##
+                ########################
+                if message.type == message.TYPE.LIST:
+                    self.logger.debug(f"{connection_from_client.getpeername()}: Received LIST message")
+                    ## Uhh, why send "list"?
+                    if (text_string == "list" and self.verify_timestamp(timestamp_string)):
+                        data_string = " ".join(name for name in self.identities.keys() if self.identities[name]["is_online"])
+                        self.logger.debug(f"{connection_from_client.getpeername()}: Sending online user list\n\t[{data_string}]")
+                    else:
+                        raise ValidationError("Command or timestamp incorrect")
+                ##########################
+                ## Message Type: LIST_2 ##
+                ##########################
+                if message.type == message.TYPE.LIST_PART2:
+                    self.logger.debug(f"{connection_from_client.getpeername()}: Received LIST_2 message")
+                    user = text_string.split(" ")[2]
+                    if (self.identities[user]["is_online"] and self.verify_timestamp(timestamp_string)):
+                        ## Send IP too?
+                        data_string = " ".join([user, str(self.identities[user]["port"])])
+                        self.logger.debug(f"{connection_from_client.getpeername()}: Sending contact info for {data_string}")
+                    else:
+                        raise ValidationError("User not online or timestamp incorrect")
+                response_string = data_string.encode() + self.get_timestamp().encode()
+                padded_response_string = self.get_padded_data(response_string)
+                message_to_send = self.get_ciphertext_message(cipher_params, padded_response_string, message)
+                connection_from_client.sendall(message_to_send.SerializeToString())
+            except ValidationError as validation_error:
+                ## Send error to client here
+                self.logger.error(f"{connection_from_client}: {validation_error}")
 
     def __init__(self):
         try: 
