@@ -117,7 +117,7 @@ class Server():
         return (message_string.decode(), ts_string.decode())
 
     def verify_timestamp(self, timestamp_string):
-        message_timestamp = int (timestamp_string)
+        message_timestamp = int(timestamp_string)
         if ((int(time.time()) - message_timestamp) > 60):
             raise ValidationError("Timestamp is incorrect!")
         # if ((int(time.time()) - message_timestamp) < 60):
@@ -136,7 +136,7 @@ class Server():
             N1 = self.generate_n1()
             message.N1_hash = self.get_hash(N1)
             message.message = N1[5:]
-            connection_from_client.sendall (message.SerializeToString())
+            connection_from_client.sendall(message.SerializeToString())
             message = self.receive_message(connection_from_client)
             self.logger.debug(f"{connection_from_client.getpeername()}:: Received N1")
             if message.N1 == N1:
@@ -149,23 +149,24 @@ class Server():
             ##################################################
             bob = DiffieHellman(group=5, key_length=200)
             bob.generate_public_key()
-            message.gb_mod_p = str (bob.public_key)
-            bob.generate_shared_secret(int (message.message))
-            Kas =  str(bob.shared_secret)[:16].encode()
-            print ("Shared secret is:", int.from_bytes (Kas, sys.byteorder))
-            self.logger.debug(f"{connection_from_client.getpeername()}:: Shared secret is:{int.from_bytes (Kas, sys.byteorder)}")
-            message.gb_mod_p = str (bob.public_key)
-            
+            message.gb_mod_p = str(bob.public_key)
+            bob.generate_shared_secret(int(message.message))
+            Kas = str(bob.shared_secret)[:16].encode()
+            print("Shared secret is:", int.from_bytes(Kas, sys.byteorder))
+            self.logger.debug(
+                f"{connection_from_client.getpeername()}:: Shared secret is:{int.from_bytes(Kas, sys.byteorder)}")
+            message.gb_mod_p = str(bob.public_key)
+
             #### loading private key
             with open("private_key.pem", "rb") as key_file:
                 private_key = serialization.load_pem_private_key(
                     key_file.read(),
                     password=None,
                     backend=default_backend())
-            
+
             #### encryption
             plain_text_sign = message.message + "|" + message.gb_mod_p
-            plain_text_sign  = plain_text_sign.encode()
+            plain_text_sign = plain_text_sign.encode()
             ### sign the text
             signature = private_key.sign(
                 plain_text_sign,
@@ -176,7 +177,7 @@ class Server():
                 hashes.SHA256()
             )
             #### Timestamp
-            timestamp = str (int(time.time()))
+            timestamp = str(int(time.time()))
             timestamp = timestamp.encode()
             plain_text = signature + timestamp
 
@@ -184,9 +185,9 @@ class Server():
             message.iv = iv
             plain_text_padded = self.get_padded_data(plain_text)
 
-            authenticate_data = b'Final Project' 
+            authenticate_data = b'Final Project'
             # Cipher parameters to facilitate encryption and decryption
-            cipher_params = {"key":Kas, "iv": iv, "auth_string": authenticate_data}
+            cipher_params = {"key": Kas, "iv": iv, "auth_string": authenticate_data}
 
             message_to_send = self.get_ciphertext_message(cipher_params, plain_text_padded, message)
             connection_from_client.sendall(message_to_send.SerializeToString())
@@ -203,7 +204,7 @@ class Server():
             #     self.logger.error(f"{connection_from_client.getpeername()}:: Timestamp failed!")
             #     raise ValidationError(f"Timestamp failed on credential verification")
             self.verify_timestamp(timestamp_string)
-            username  =  text_string.split("|")[0]
+            username = text_string.split("|")[0]
             password = text_string.split("|")[1]
             verify = "Fail"
             if username in self.identities.keys():
@@ -213,10 +214,10 @@ class Server():
             if verify == "Fail":
                 raise ValidationError(f"Incorrect password or username!")
 
-            plain_text =  verify.encode()
+            plain_text = verify.encode()
             timestamp = self.get_timestamp().encode()
             plain_text = plain_text + timestamp
-            
+
             plain_text_padded = self.get_padded_data(plain_text)
 
             message_to_send = self.get_ciphertext_message(cipher_params, plain_text_padded, message)
@@ -250,8 +251,10 @@ class Server():
                     self.logger.debug(f"{connection_from_client.getpeername()}: Received LIST message")
                     self.verify_timestamp(timestamp_string)
                     if (text_string == "list"):
-                        data_string = " ".join(name for name in self.identities.keys() if self.identities[name]["is_online"])
-                        self.logger.debug(f"{connection_from_client.getpeername()}: Sending online user list\n\t[{data_string}]")
+                        data_string = " ".join(
+                            name for name in self.identities.keys() if self.identities[name]["is_online"])
+                        self.logger.debug(
+                            f"{connection_from_client.getpeername()}: Sending online user list\n\t[{data_string}]")
                         response_string = data_string.encode() + self.get_timestamp().encode()
                         padded_response_string = self.get_padded_data(response_string)
                         message_to_send = self.get_ciphertext_message(cipher_params, padded_response_string, message)
@@ -271,9 +274,9 @@ class Server():
                         kab_string = kab.hex()[:16]
                         ## Generate a new iv
                         ticket_iv = self.identities[user]["serverclient_iv"]
-                        print (ticket_iv)
-                        ivtemp =os.urandom(16)
-                        ticket_iv_string = ivtemp.hex()[:16] ### iv ab
+                        print(ticket_iv)
+                        ivtemp = os.urandom(16)
+                        ticket_iv_string = ivtemp.hex()[:16]  ### iv ab
                         ## Get serverclient key for the user requested
                         ticket_enc_key = self.identities[user]["serverclient_key"]
                         ## Create new encryption for the ticket
@@ -290,7 +293,7 @@ class Server():
                         ticket_ciphertext = ticket_encryptor.update(padded_ticket_string) + ticket_encryptor.finalize()
                         #############################################
                         data_string = " ".join([user, str(self.identities[user]["port"]), kab_string, ticket_iv_string])
-                        response_string = data_string.encode()                        
+                        response_string = data_string.encode()
                         self.logger.debug(f"{connection_from_client.getpeername()}: Completing mutual authentication")
                         padded_response_string = self.get_padded_data(response_string)
                         message_to_send = self.get_ciphertext_message(cipher_params, padded_response_string, message)
@@ -316,6 +319,7 @@ class Server():
                         response_string = data_string.encode() + self.get_timestamp().encode()
                         padded_response_string = self.get_padded_data(response_string)
                         message_to_send = self.get_ciphertext_message(cipher_params, padded_response_string, message)
+                        message_to_send.type = COMM_MESSAGE.TYPE.CONFIRM
                         connection_from_client.sendall(message_to_send.SerializeToString())
                     else:
                         raise ValidationError("Logout not possible")
@@ -330,9 +334,8 @@ class Server():
             except (KeyboardInterrupt) as fatal_error:
                 self.shutdown_application()
 
-
     def __init__(self):
-        try: 
+        try:
             self.open_sockets = list()
             self.get_logger()
             self.load_user_data()
