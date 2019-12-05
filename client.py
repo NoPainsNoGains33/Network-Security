@@ -219,6 +219,7 @@ class Client():
         ##############################
         while True:
             data = sock.recv(4096)
+            print ("I have received a new message!")
             MessageRec = COMM_MESSAGE()
             MessageRec.ParseFromString(data)
             if (MessageRec.type == COMM_MESSAGE.TYPE.CLIENT_TO_CLIENT):
@@ -275,6 +276,7 @@ class Client():
                     plain_text = plain_text.decode()
                     if plain_text.split(" ")[0] == "Confirm" and plain_text.split(" ")[1] == src:
                         print("I have succeed in setting up connection with", src, "with session key:", self.socket_list[src][1])
+                        print("We use this socket to chatting:", sock)
                     else:
                         print ("The adversary modify the CONFIRM message")
                 else:
@@ -314,6 +316,7 @@ class Client():
         MessageSend.tag = encryptor.tag
 
         self.socket_list[dest][0].sendall(MessageSend.SerializeToString())
+        print ("I have sent message to",dest)
 
     def decryption_with_timestamp_in_client(self, MessageRec, Kab, ivtemp):
         #  AES  decryption
@@ -350,7 +353,7 @@ class Client():
         Message.tag = encryptor.tag
         return Message
 
-    def client_setup_connection (self, dest, message):
+    def client_setup_connection (self, dest):
         client_sk = socket.socket()
         client_sk.connect(('127.0.0.1', int(self.user_online[dest][1])))
         self.socket_list[dest] = []
@@ -413,6 +416,7 @@ class Client():
                 MessageSend = self.encryption_in_client (MessageSend, self.socket_list[dest][1],self.socket_list[dest][2], plain_text)
                 self.socket_list[dest][0].sendall(MessageSend.SerializeToString())
                 print ("I have succeed in setting up connection with", dest, "with session key:", self.socket_list[dest][1])
+                print("We use this socket to chatting:", self.socket_list[dest][0])
             else:
                 print ("Set up connection with", dest, "failed!")
                 sys.exit(1)
@@ -449,6 +453,9 @@ class Client():
                 if (len(command.split(" ")) == 3 and "Talk to" in command):
                     dest = command.split(" ")[2]
                     if (dest != self.client_name):
+                        if dest in self.socket_list.keys():
+                            print("You are now connected with",dest, "Just use 'Send' command!")
+                            continue
                         if (dest not in self.user_online.keys()):
                             print(dest, "is not online now!")
                             continue
@@ -490,21 +497,24 @@ class Client():
                     if (command.split(" ")[0] == 'Send' and len(command.split(" ")) >=3):
                         dest = command.split(" ")[1]
                         message = command.split(" ",2)[2]
-                        if (dest not in self.user_online.keys()):
-                            print ("Sorry, you can't send message to whom is not online!")
-                            continue
+                        if dest in self.socket_list.keys():
+                            self.client_to_client_send(dest, message)
                         else:
-                            if self.user_online[dest] == []:
-                                print ("You must ask server for ticket first!")
+                            if (dest not in self.user_online.keys()):
+                                print ("Sorry, you can't send message to whom is not online!")
                                 continue
                             else:
-                                if dest not in self.socket_list.keys():
-                                    self.client_setup_connection (dest,message)
-                                self.client_to_client_send(dest, message)
+                                if self.user_online[dest] == []:
+                                    print ("You must ask server for ticket first!")
+                                    continue
+                                else:
+                                    if dest not in self.socket_list.keys():
+                                        self.client_setup_connection (dest)
+                                    self.client_to_client_send(dest, message)
                     else:
                         print ("Please type a correct format!")
                         continue
-            print("Now, I have stored these users with/without port:", self.user_online)
+            # print("Now, I have stored these users with/without port:", self.user_online)
 
 
 
