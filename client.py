@@ -14,6 +14,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives import hashes
 
+class ValidationError(Exception):
+    pass
 
 class Client():
 
@@ -117,8 +119,9 @@ class Client():
             ## return plain_text in bytes
             return plain_text
         else:
-            print ("This ticket is not fresh!")
-            sys.exit(1)
+            raise ValidationError("This ticket is not fresh!")
+            # print ("This ticket is not fresh!")
+            # sys.exit(1)
 
     def puzzle(self):
         self.Message_send.type = COMM_MESSAGE.TYPE.LOGIN

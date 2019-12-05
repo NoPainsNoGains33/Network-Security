@@ -9,7 +9,6 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives import hashes
 import time
-import zmq
 import sys
 import os
 import socket
@@ -35,11 +34,11 @@ class Server():
 
     def shutdown_application(self):
         self.logger.error(f"Closing entire application from this thread")
-        crit_message = COMM_MESSAGE()
-        crit_message.type = crit_message.TYPE.ERROR
-        crit_message.message = str("SERVER SHUTDOWN")
+        #crit_message = COMM_MESSAGE()
+        ## crit_message.type = crit_message.TYPE.ERROR
+        #crit_message.message = str("SERVER SHUTDOWN")
         for socket in self.open_sockets:
-            socket.sendall(crit_message.SerializeToString())
+            #socket.sendall(crit_message.SerializeToString())
             socket.close()
         self.socket_from_client.close()
         del self.identities
@@ -319,6 +318,10 @@ class Server():
                         connection_from_client.sendall(message_to_send.SerializeToString())
                     else:
                         raise ValidationError("Logout not possible")
+
+            except (ValueError) as auth_tag_error:
+                self.logger.error(f"{connection_from_client}:: Connection closed abruptly, {auth_tag_error}")
+                return
 
             except (Exception, ValidationError) as critical_error:
                 self.logger.error(f"{connection_from_client}:: {critical_error}")
