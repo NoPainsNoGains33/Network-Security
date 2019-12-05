@@ -695,7 +695,7 @@ if __name__ == '__main__':
             client_name = input("Please type your username:")
             client_password = getpass("Please type your password:")
             test_object = Client(client_name, client_password)
-            print("The client name and password is", test_object.get_name())
+            #print("The client name and password is", test_object.get_name())
             test_object.client_to_server_login()
         except (Exception, ValidationError) as err:
             print(err)
@@ -705,5 +705,8 @@ if __name__ == '__main__':
             login_attempts += 1
             continue
         print("Now, send message!")
-        test_object.bind_for_listening()
-        test_object.talk_with_server()
+        try:
+            test_object.bind_for_listening()
+            test_object.talk_with_server()
+        except KeyboardInterrupt as keyb:
+            test_object.shutdown_client()
