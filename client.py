@@ -13,6 +13,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives import hashes
 
+class ValidationError(Exception):
+    pass
 
 class Client():
 
@@ -27,9 +29,6 @@ class Client():
         self.socket_to_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_address = ('localhost', 9090)
         self.socket_to_server.connect(server_address)
-        # context = zmq.Context()
-        # self.socket = context.socket(zmq.REQ)
-        # self.socket.bind("tcp://127.0.0.1:9090")
 
     def send_message(self):
         self.socket_to_server.sendall(self.Message_send.SerializeToString())
@@ -37,6 +36,8 @@ class Client():
     def receive_message(self):
         data = self.socket_to_server.recv(4096)
         self.Message_rec.ParseFromString(data)
+        if self.Message_rec.type == self.Message_rec.TYPE.ERROR:
+            raise ValidationError(self.Message_rec.message)
 
     def verify_timestamp(self, timestamp):
         time_now = int(time.time())
@@ -112,6 +113,11 @@ class Client():
 
         # receive the session key of server
         self.receive_message()
+        # try:
+        #     self.receive_message()
+        # except ValidationError as error:
+        #     print(error, "\n Please try logging in again!\n")
+        #     kickstart()
 
         alice.generate_shared_secret(int(self.Message_rec.gb_mod_p))
         # set up the session key Kas
@@ -166,16 +172,16 @@ class Client():
         plain_text = self.decryption_with_timestamp()
         plain_text = plain_text.decode()
         print(plain_text)
-        if (plain_text == 'Fail'):
-            sys.exit(1)
-        else:
-            self.port_for_listening = int(plain_text.split("|")[1])
+        #if (plain_text == 'Fail'):
+        #    sys.exit(1)
+        #else:
+        self.port_for_listening = int(plain_text.split("|")[1])
 
     def client_to_server_login(self):
-        test_object.connect_to_server()
-        test_object.puzzle()
-        test_object.session()
-        test_object.login()
+        self.connect_to_server()
+        self.puzzle()
+        self.session()
+        self.login()
         # self.socket_to_server.close()
 
     def get_name(self):
@@ -208,31 +214,11 @@ class Client():
             client_thread = threading.Thread(target=self.handle_sock, args=(sock, addr))  # 把sock 加入线程内
             client_thread.start()  # 启动线程
 
-    # def send (self,temp):
-    #     while True:
-    #         inp = input()
-    #         # print ("I have received the command: ", inp)
-    #         Dest = inp.split(" ")[1]
-    #         # print (Dest)
-    #         if Dest not in socket_list.keys():
-    #             client_sk = socket.socket()
-    #             client_sk.connect(('127.0.0.1', port_list[Dest]))
-    #             socket_list[Dest] = client_sk
-    #             # print("Now, in the socket list,", socket_list.keys())
-    #             # print ("I will send information to ", socket_list[Dest])
-    #         socket_list[Dest].sendall(bytes(inp.split(" ")[2], encoding='utf-8'))
-    #         # print ("I have send ", inp.split(" ")[2])
-    #         if inp == 'q':
-    #             break
-    #     # close the connection
-    #     for temp in socket_list.keys():
-    #         socket_list[temp].close()
-    # client_sk.close()
 
     def talk_with_server(self):
         self.user_online = {}
         self.socket_list = {}
-        listen_thread = threading.Thread(target=test_object.listen, args=(1,))
+        listen_thread = threading.Thread(target=self.listen, args=(1,))
         listen_thread.start()
 
         while (True):
@@ -293,16 +279,23 @@ class Client():
             print("Now, I have stored these users with/without port:", self.user_online)
 
 
-
 if __name__ == '__main__':
-    client_name = input("Please type your username:")
-    client_password = getpass("Please type your password:")
-    test_object = Client(client_name, client_password)
-    print("The client name and password is", test_object.get_name())
-    test_object.client_to_server_login()
-    print("Now, send message!")
-    test_object.bind_for_listening()
-    test_object.talk_with_server()
+    login_attempts = 0
+    while True:
+        try:
+            client_name = input("Please type your username:")
+            client_password = getpass("Please type your password:")
+            test_object = Client(client_name, client_password)
+            print("The client name and password is", test_object.get_name())
+            test_object.client_to_server_login()
+        except ValidationError as err:
+            print(err)
+            if (login_attempts == 2):
+                print("Too many login attempts, exiting")
+                exit(1)
+            login_attempts += 1
+            continue
+        print("Now, send message!")
+        test_object.bind_for_listening()
+        test_object.talk_with_server()
 
-# send_thread = threading.Thread(target=test_object.send, args=(1,))
-# send_thread.start()
