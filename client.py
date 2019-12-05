@@ -26,8 +26,19 @@ class Client():
         self.Message_send = COMM_MESSAGE()
         self.Message_rec = COMM_MESSAGE()
 
+    def shutdown_client(self):
+        print("Closing entire client from this thread abruptly")
+        self.socket_to_client.close()
+        self.socket_to_server.close()
+        for sock in self.socket_list:
+            sock.close()
+        del self.Kas
+        del self.iv
+        os._exit(0)
+
     def connect_to_server(self):
         self.socket_to_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket_to_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server_address = ('localhost', 9090)
         self.socket_to_server.connect(server_address)
 
@@ -177,8 +188,8 @@ class Client():
             )
             print("Signature verify success!")
         except:
-            print('Error in verifying the signature!')
-            sys.exit(1)
+            raise ValidationError('Error in verifying the signature!')
+            #sys.exit(1)
 
     def login(self):
         message = self.client_name + "|" + self.client_password
@@ -284,10 +295,11 @@ class Client():
                         print("I have succeed in setting up connection with", src, "with session key:", self.socket_list[src][1])
                         print("We use this socket to chatting:", sock)
                     else:
-                        print ("The adversary modify the CONFIRM message")
+                        #print ("The adversary modify the CONFIRM message")
+                        raise ValidationError("The adversary modify the CONFIRM message")
                 else:
-                    print ("N2 puzzle wrong!")
-                    sys.exit(1)
+                    raise ValidationError("N2 puzzle was wrong!")
+                    ##sys.exit(1)
             else:
                 plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_list[src][1], self.socket_list[src][2])
                 plain_text = plain_text.decode()
@@ -442,6 +454,12 @@ class Client():
         while (True):
             self.Message_send = COMM_MESSAGE()
             command = input()
+            if (command == "logout"):
+                self.Message_send.type = COMM_MESSAGE.TYPE.LOGOUT
+                plain_text = command.encode() + str(int(time.time())).encode()
+                self.encryption(plain_text)
+                self.send_message()
+                self.receive_message()
             if (command == "list"):
                 self.Message_send.type = COMM_MESSAGE.TYPE.LIST
                 plain_text = command.encode() + str(int(time.time())).encode()
@@ -533,7 +551,7 @@ if __name__ == '__main__':
             test_object = Client(client_name, client_password)
             print("The client name and password is", test_object.get_name())
             test_object.client_to_server_login()
-        except ValidationError as err:
+        except (Exception, ValidationError) as err:
             print(err)
             if (login_attempts == 2):
                 print("Too many login attempts, exiting")
