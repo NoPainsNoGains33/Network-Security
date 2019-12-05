@@ -306,11 +306,11 @@ class Server():
                 ##########################
                 ## Message Type: LOGOUT ##
                 ##########################
-                if message.type == message.TYPE.LIST:
+                if message.type == message.TYPE.LOGOUT:
                     self.logger.debug(f"{connection_from_client.getpeername()}: Received LOGOUT message")
                     self.verify_timestamp(timestamp_string)
                     if (text_string == "logout"):
-                        self.identities["is_online"] = False
+                        self.identities[username]["is_online"] = False
                         data_string = "confirmed"
                         self.logger.debug(f"{connection_from_client.getpeername()}: Logging out")
                         response_string = data_string.encode() + self.get_timestamp().encode()
