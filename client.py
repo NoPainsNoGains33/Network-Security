@@ -38,7 +38,6 @@ class Client():
 
     def connect_to_server(self):
         self.socket_to_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket_to_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server_address = ('localhost', 9090)
         self.socket_to_server.connect(server_address)
         # context = zmq.Context()
@@ -236,6 +235,23 @@ class Client():
             # print ("I have received a new message!")
             MessageRec = COMM_MESSAGE()
             MessageRec.ParseFromString(data)
+            if (MessageRec.type == COMM_MESSAGE.TYPE.LOGOUT):
+                plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_from_list[src][1],
+                                                                      self.socket_from_list[src][2])
+                plain_text = plain_text.decode()
+                print("I received log out request_1")
+                print (plain_text)
+                if (plain_text == "log out"):
+                    MessageSend = COMM_MESSAGE()
+                    MessageSend.type = COMM_MESSAGE.TYPE.CONFIRM
+                    plain_text = 'log out confirmed'.encode() + str(int(time.time())).encode()
+                    MessageSend = self.encryption_in_client(MessageSend, self.socket_from_list[src][1],
+                                                            self.socket_from_list[src][2], plain_text)
+                    self.socket_from_list[src][0].sendall(MessageSend.SerializeToString())
+                    self.socket_from_list[src][0].close()
+
+                    del self.socket_from_list[src]
+                    del self.user_online[src]
             if (MessageRec.type == COMM_MESSAGE.TYPE.CLIENT_TO_CLIENT):
                 plain_text = self.decryption_of_ticket_with_timestamp(MessageRec.ticket, MessageRec.ticket_tag)
                 plain_text = plain_text.decode()
@@ -329,10 +345,30 @@ class Client():
             data = sock.recv(4096)
             MessageRec = COMM_MESSAGE()
             MessageRec.ParseFromString(data)
-            plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_list[dest][1],
-                                                                  self.socket_list[dest][2])
-            plain_text = plain_text.decode()
-            print("From", dest, ":", plain_text)
+
+            if (MessageRec.type == COMM_MESSAGE.TYPE.LOGOUT):
+                plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_list[dest][1],
+                                                                      self.socket_list[dest][2])
+                plain_text = plain_text.decode()
+                print("I received log out request")
+                print(plain_text)
+                if (plain_text == "log out"):
+                    MessageSend = COMM_MESSAGE()
+                    MessageSend.type = COMM_MESSAGE.TYPE.CONFIRM
+                    plain_text = 'log out confirmed'.encode() + str(int(time.time())).encode()
+                    MessageSend = self.encryption_in_client(MessageSend, self.socket_list[dest][1],
+                                                            self.socket_list[dest][2], plain_text)
+                    self.socket_list[dest][0].sendall(MessageSend.SerilizeToString())
+                    self.socket_list[dest][0].close()
+
+                    del self.socket_list[dest]
+                    del self.user_online[dest]
+
+            else:
+                plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_list[dest][1],
+                                                                      self.socket_list[dest][2])
+                plain_text = plain_text.decode()
+                print("From", dest, ":", plain_text)
 
 
     def client_to_client_send (self, dest, message, flag):
@@ -441,6 +477,7 @@ class Client():
         N1_rec = int(plain_text.split(" ")[0])
         if N1-1 == N1_rec:
             MessageSend = COMM_MESSAGE()
+            MessageSend.type = COMM_MESSAGE.TYPE.CLIENT_TO_CLIENT
             ### Set up the new Kab ###
             alice = DiffieHellman(group=5, key_length=200)
             alice.generate_public_key()
@@ -465,13 +502,14 @@ class Client():
                 self.socket_list[dest].append(MessageRec.iv)
                 plain_text = ("Confirm " + self.client_name).encode() + str(int (time.time())).encode()
                 MessageSend = COMM_MESSAGE()
+                MessageSend.type = COMM_MESSAGE.TYPE.CLIENT_TO_CLIENT
                 MessageSend.iv = self.socket_list[dest][2]
                 self.socket_list[dest].append(server)
                 client_thread_listen_from_existing_connection = threading.Thread(target=self.listen_from_existed_connection, args=(dest,))  # 把sock 加入线程内
                 client_thread_listen_from_existing_connection.start()  # 启动线程
                 MessageSend = self.encryption_in_client (MessageSend, self.socket_list[dest][1],self.socket_list[dest][2], plain_text)
                 self.socket_list[dest][0].sendall(MessageSend.SerializeToString())
-                print ("I have succeed in setting up connection with", dest)
+                # print ("I have succeed in setting up connection with", dest)
                 # print("We use this socket to chatting:", self.socket_list[dest][0])
             else:
                 print ("Set up connection with", dest, "failed!")
@@ -480,6 +518,74 @@ class Client():
         else:
             print ("N1 verify failed!")
             sys.exit(1)
+
+    def log_out_server (self):
+        self.Message_send = COMM_MESSAGE()
+        self.Message_send.type = COMM_MESSAGE.TYPE.LOGOUT
+        plain_text = 'logout'.encode() + str(int(time.time())).encode()
+        self.encryption(plain_text)
+        self.send_message()
+
+        self.receive_message()
+        if (self.Message_rec.type == COMM_MESSAGE.TYPE.CONFIRM):
+            plain_text = self.decryption_with_timestamp()
+            plain_text = plain_text.decode()
+            # print (plain_text)
+            if plain_text == "confirmed":
+                # print ("Log out from server succeed!")
+                return None
+        print ("Log out from server failed")
+        sys.exit(1)
+
+    def log_out_client (self):
+        # print (self.socket_from_list)
+        # print (self.socket_list)
+        for key in self.socket_list:
+            MessageSend = COMM_MESSAGE()
+            MessageSend.type = COMM_MESSAGE.TYPE.LOGOUT
+            plain_text = 'log out'.encode() + str(int(time.time())).encode()
+            MessageSend = self.encryption_in_client(MessageSend, self.socket_list[key][1], self.socket_list[key][2],plain_text)
+            self.socket_list[key][0].sendall(MessageSend.SerializeToString())
+
+            data = self.socket_list[key][0].recv(4096)
+            MessageRec = COMM_MESSAGE()
+            MessageRec.ParseFromString(data)
+            print ("I received back log out request")
+            if (MessageRec.type == COMM_MESSAGE.TYPE.CONFIRM):
+                plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_list[key][1], self.socket_list[key][2])
+                plain_text = plain_text.decode()
+                if plain_text == "log out confirmed":
+                    self.socket_list[key][0].close()
+                else:
+                    print ("Log out from client failed!")
+                    sys.exit(1)
+            else:
+                print("Log out from client failed!")
+                sys.exit(1)
+
+        for key in self.socket_from_list:
+            MessageSend = COMM_MESSAGE()
+            MessageSend.type = COMM_MESSAGE.TYPE.LOGOUT
+            plain_text = 'log out'.encode() + str(int(time.time())).encode()
+            MessageSend = self.encryption_in_client(MessageSend, self.socket_from_list[key][1], self.socket_from_list[key][2],plain_text)
+            self.socket_from_list[key][0].sendall(MessageSend.SerializeToString())
+
+            data = self.socket_from_list[key][0].recv(4096)
+            MessageRec = COMM_MESSAGE()
+            MessageRec.ParseFromString(data)
+            print("I received back log out request")
+            if (MessageRec.type == COMM_MESSAGE.TYPE.CONFIRM):
+                plain_text = self.plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_from_list[key][1], self.socket_from_list[key][2])
+                plain_text = plain_text.decode()
+                if plain_text == "log out confirmed":
+                    flag = 1
+                    self.socket_from_list[key][0].close()
+                else:
+                    print("Log out from client failed!")
+                    sys.exit(1)
+            else:
+                print("Log out from client failed!")
+                sys.exit(1)
 
     def talk_with_server(self):
         ## In user_online, it stores users online with port, Kab_temp, ticket
@@ -494,11 +600,10 @@ class Client():
             self.Message_send = COMM_MESSAGE()
             command = input()
             if (command == "logout"):
-                self.Message_send.type = COMM_MESSAGE.TYPE.LOGOUT
-                plain_text = command.encode() + str(int(time.time())).encode()
-                self.encryption(plain_text)
-                self.send_message()
-                self.receive_message()
+                self.log_out_server ()
+                self.log_out_client ()
+                print ("You have logged out!")
+                return None
             if (command == "list"):
                 self.Message_send.type = COMM_MESSAGE.TYPE.LIST
                 plain_text = command.encode() + str(int(time.time())).encode()
@@ -559,6 +664,9 @@ class Client():
                 else:
                     if (command.split(" ")[0] == 'Send' and len(command.split(" ")) >=3):
                         dest = command.split(" ")[1]
+                        if dest == self.client_name:
+                            print ("Sorry, you can't send yourself messages!")
+                            continue
                         message = command.split(" ",2)[2]
                         if dest in self.socket_list.keys():
                             self.client_to_client_send(dest, message, 0)
@@ -580,10 +688,6 @@ class Client():
                     else:
                         print ("Please type a correct format!")
                         continue
-            # print("Now, I have stored these users with/without port:", self.user_online)
-
-
-
 if __name__ == '__main__':
     login_attempts = 0
     while True:
