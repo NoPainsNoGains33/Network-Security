@@ -1,13 +1,16 @@
 syntax = "proto3";
 
+//protoc --python_out=. message_type.proto
 message COMM_MESSAGE {
 	enum TYPE {
 		CONFIRM = 0;
 		LOGIN = 1;
 		LIST = 2;
 		LIST_PART2 = 3;
-		LOGOUT = 4;
-		ERROR = 5;
+		CLIENT_TO_CLIENT = 4;
+		MESSAGE = 5;
+		LOGOUT = 6;
+		ERROR = 7;
 	}
 	TYPE type = 1;
 	string N1 = 2;
