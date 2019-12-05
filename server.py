@@ -22,11 +22,12 @@ from datetime import datetime
 from sys import stdout
 from diffiehellman.diffiehellman import DiffieHellman
 
+
 class ValidationError(Exception):
     pass
 
-class Server():
 
+class Server():
     identities = None
     socket_from_client = None
     logger = None
@@ -45,7 +46,10 @@ class Server():
         os._exit(0)
 
     def get_logger(self):
-        logging.basicConfig(format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s", level = logging.DEBUG, handlers = [logging.FileHandler(filename = datetime.now().strftime("%H_%M_%d_%m_%Y_") + "server.log"), logging.StreamHandler(stdout)])
+        logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.DEBUG,
+                            handlers=[
+                                logging.FileHandler(filename=datetime.now().strftime("%H_%M_%d_%m_%Y_") + "server.log"),
+                                logging.StreamHandler(stdout)])
         self.logger = logging.getLogger()
 
     def load_user_data(self):
@@ -55,11 +59,12 @@ class Server():
             self.identities[user]["is_online"] = False
             self.identities[user]["ip_address"] = None
             self.identities[user]["serverclient_key"] = None
+            self.identities[user]["serverclient_iv"] = None
 
     def set_server_socket(self):
         self.socket_from_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket_from_client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        serveraddress = ('localhost',9090)
+        serveraddress = ('localhost', 9090)
         self.socket_from_client.bind(serveraddress)
         self.socket_from_client.listen(1)
         return self.socket_from_client
@@ -100,7 +105,8 @@ class Server():
         return message
 
     def get_plaintext_from_message(self, cipher_params, message):
-        decryptor = Cipher(algorithms.AES(cipher_params["key"]), modes.GCM(cipher_params["iv"], message.tag), backend=default_backend()).decryptor()
+        decryptor = Cipher(algorithms.AES(cipher_params["key"]), modes.GCM(cipher_params["iv"], message.tag),
+                           backend=default_backend()).decryptor()
         decryptor.authenticate_additional_data(cipher_params["auth_string"])
         decrypted_plain_text = decryptor.update(message.cipher_text) + decryptor.finalize()
         return decrypted_plain_text
@@ -117,8 +123,6 @@ class Server():
         # if ((int(time.time()) - message_timestamp) < 60):
         #     return True
         # return False
-            
-
 
     def get_timestamp(self):
         return str(int(time.time()))
@@ -220,6 +224,7 @@ class Server():
             self.identities[username]["is_online"] = True
             self.identities[username]["ip_address"] = connection_from_client.getpeername()[0]
             self.identities[username]["serverclient_key"] = Kas
+            self.identities[username]["serverclient_iv"] = iv
 
         except (ValidationError, Exception) as critical_error:
             self.logger.error(f"{connection_from_client.getpeername()}:: {critical_error}")
@@ -265,15 +270,18 @@ class Server():
                         kab = os.urandom(16)
                         kab_string = kab.hex()[:16]
                         ## Generate a new iv
-                        ticket_iv = os.urandom(16)
-                        ticket_iv_string = ticket_iv.hex()[:16]
+                        ticket_iv = self.identities[user]["serverclient_iv"]
+                        print (ticket_iv)
+                        ivtemp =os.urandom(16)
+                        ticket_iv_string = ivtemp.hex()[:16] ### iv ab
                         ## Get serverclient key for the user requested
                         ticket_enc_key = self.identities[user]["serverclient_key"]
                         ## Create new encryption for the ticket
                         ## Key will be Kbs
                         ## Get encrypted ticket
                         #########################################
-                        ticket_cipher = Cipher(algorithms.AES(ticket_enc_key), modes.GCM(ticket_iv), backend=default_backend())
+                        ticket_cipher = Cipher(algorithms.AES(ticket_enc_key), modes.GCM(ticket_iv),
+                                               backend=default_backend())
                         ticket_encryptor = ticket_cipher.encryptor()
                         ticket_encryptor.authenticate_additional_data(cipher_params["auth_string"])
                         ticket_string = " ".join([username, kab_string, ticket_iv_string, self.get_timestamp()])
@@ -288,6 +296,10 @@ class Server():
                         message_to_send = self.get_ciphertext_message(cipher_params, padded_response_string, message)
                         message_to_send.ticket = ticket_ciphertext
                         message_to_send.ticket_tag = ticket_encryptor.tag
+                        # print("Kas:", ticket_enc_key )
+                        # print("IV:", ticket_iv)
+                        # print ("Ticket:", message_to_send.ticket)
+                        # print ("Ticket_tag: ", message_to_send.ticket_tag)
                         connection_from_client.sendall(message_to_send.SerializeToString())
                     else:
                         raise ValidationError(f"User {user} not found online!")
@@ -331,14 +343,15 @@ class Server():
                 message = self.receive_message(connection_from_client)
                 if message.type == message.TYPE.LOGIN:
                     self.logger.debug(f"Received login message from {client_address}")
-                    login_thread = Thread(target = self.connection_ini_proto, args = (message, connection_from_client))
+                    login_thread = Thread(target=self.connection_ini_proto, args=(message, connection_from_client))
                     self.logger.debug(f"Starting login protocol thread for {client_address}")
-                    login_thread.start() 
+                    login_thread.start()
                     continue
 
         except (KeyboardInterrupt) as fatal_exception:
             self.logger.critical("Program exiting, closing main socket!")
             self.shutdown_application()
+
 
 if __name__ == '__main__':
     server = Server()
