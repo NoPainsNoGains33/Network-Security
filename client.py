@@ -44,7 +44,7 @@ class Client():
         plain_text_timestamp = timestamp.decode()
         plain_text_timestamp = int(plain_text_timestamp)
         if (time_now - plain_text_timestamp < 60):
-            print("Timestamp verified!")
+            # print("Timestamp verified!")
             return True
         else:
             print("Failed in Timestamp!")
@@ -84,25 +84,16 @@ class Client():
         else:
             sys.exit(1)
 
-    def decryption_of_ticket(self):
+    def decryption_of_ticket_with_timestamp(self, cipher_text, tag):
         #  AES  decryption
-        decryptor = Cipher(algorithms.AES(self.Kas), modes.GCM(self.iv, self.Message_rec.ticket_tag),
-                           backend=default_backend()).decryptor()
-        decryptor.authenticate_additional_data(self.authenticate_data)
-        decrypted_plain_text = decryptor.update(self.Message_rec.ticket) + decryptor.finalize()
-
-        # unpad
-        unpadder = padding.PKCS7(128).unpadder()
-        plain_text = unpadder.update(decrypted_plain_text) + unpadder.finalize()
-
-        return plain_text
-
-    def decryption_of_ticket_with_timestamp(self, tag, cipher_text):
-        #  AES  decryption
+        # print ("Kas:", self.Kas)
+        # print ("IV:",self.iv)
+        # print ("Ticket:", cipher_text)
+        # print ("Ticket_tag:", tag)
         decryptor = Cipher(algorithms.AES(self.Kas), modes.GCM(self.iv, tag),
                            backend=default_backend()).decryptor()
         decryptor.authenticate_additional_data(self.authenticate_data)
-        decrypted_plain_text = decryptor.update(cipher_text + decryptor.finalize())
+        decrypted_plain_text = decryptor.update(cipher_text) + decryptor.finalize()
 
         # unpad
         unpadder = padding.PKCS7(128).unpadder()
@@ -135,7 +126,7 @@ class Client():
             if digest.hexdigest() == self.Message_rec.N1_hash:
                 break
         self.Message_send.N1 = answer
-        print("Puzzle solved and the answer is:", i_hex)
+        # print("Puzzle solved and the answer is:", i_hex)
 
     # set up the session key of client
     def session(self):
@@ -152,7 +143,7 @@ class Client():
         # set up the session key Kas
         self.Kas = str(alice.shared_secret)[:16].encode()
         self.iv = self.Message_rec.iv
-        print("Shared secret is:", int.from_bytes(self.Kas, sys.byteorder))
+        # print("Shared secret is:", int.from_bytes(self.Kas, sys.byteorder))
 
         # Decryption
         plain_text = self.decryption_with_timestamp()
@@ -178,7 +169,7 @@ class Client():
                 ),
                 hashes.SHA256()
             )
-            print("Signature verify success!")
+            # print("Signature verify success!")
         except:
             print('Error in verifying the signature!')
             sys.exit(1)
@@ -200,7 +191,7 @@ class Client():
         # Decrypt the data
         plain_text = self.decryption_with_timestamp()
         plain_text = plain_text.decode()
-        print(plain_text)
+        print(plain_text.split("|")[0])
         if (plain_text == 'Fail'):
             sys.exit(1)
         else:
@@ -228,30 +219,100 @@ class Client():
         ##############################
         while True:
             data = sock.recv(4096)
+            # print ("I have received a new message!")
             MessageRec = COMM_MESSAGE()
             MessageRec.ParseFromString(data)
+
+            if (MessageRec.type == COMM_MESSAGE.TYPE.LOGOUT):
+                plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_from_list[src][1],
+                                                                      self.socket_from_list[src][2])
+                plain_text = plain_text.decode()
+                print("I received log out request_1")
+                print (plain_text)
+                if (plain_text == "log out"):
+                    MessageSend = COMM_MESSAGE()
+                    MessageSend.type = COMM_MESSAGE.TYPE.CONFIRM
+                    plain_text = 'log out confirmed'.encode() + str(int(time.time())).encode()
+                    MessageSend = self.encryption_in_client(MessageSend, self.socket_from_list[src][1],
+                                                            self.socket_from_list[src][2], plain_text)
+                    self.socket_from_list[src][0].sendall(MessageSend.SerializeToString())
+                    self.socket_from_list[src][0].close()
+
+                    del self.socket_from_list[src]
+                    del self.user_online[src]
+
             if (MessageRec.type == COMM_MESSAGE.TYPE.CLIENT_TO_CLIENT):
                 plain_text = self.decryption_of_ticket_with_timestamp(MessageRec.ticket, MessageRec.ticket_tag)
                 plain_text = plain_text.decode()
                 src = plain_text.split(" ")[0]
-                kab = plain_text.split(" ")[1].encode()
-                iv = plain_text.split(" ")[2].encode()
-                print ("I have received message from:", ret)
-                src = ret
-                while True:
-                    ret = str(sock.recv(1024), encoding='utf-8')
-                    if ret == 'q':
-                        break
+                # self.socket_from_list[src] = []
+                # self.socket_from_list[src].append (sock)
+                kab_temp = plain_text.split(" ")[1].encode()
+                iv_temp = plain_text.split(" ")[2].encode()
+                plain_text = self.decryption_with_timestamp_in_client(MessageRec, kab_temp, iv_temp)
+                plain_text = plain_text.decode()
+
+                N1 = int(plain_text)
+                y = os.urandom(8)
+                x = y.hex()
+                N2 = int(x, 16)
+                plain_text = (str(N1-1)+ " " + str(N2)).encode()+ str(int(time.time())).encode()
+                # .encode() + " ".encode + str(N2).encode()
+
+                MessageSend = COMM_MESSAGE()
+
+                bob = DiffieHellman(group=5, key_length=200)
+                bob.generate_public_key()
+                MessageSend.gb_mod_p = str(bob.public_key)
+                MessageSend = self.encryption_in_client(MessageSend, kab_temp, iv_temp, plain_text)
+                sock.sendall(MessageSend.SerializeToString())
+
+                MessageRec = COMM_MESSAGE()
+                data = sock.recv(4096)
+                MessageRec.ParseFromString(data)
+
+                plain_text = self.decryption_with_timestamp_in_client(MessageRec, kab_temp, iv_temp)
+                N2_rec = int(plain_text.decode())
+                if N2-1 == N2_rec:
+                    bob.generate_shared_secret(int(MessageRec.message))
+                    kas = str(bob.shared_secret)[:16].encode()
+                    # self.socket_list[src].append(str(bob.shared_secret)[:16].encode())
+                    temp = os.urandom(16)
+                    iv = temp.hex()[:16].encode()
+                    # self.socket_list[src].append(iv)
+
+                    plain_text = ("Confirm " + self.client_name).encode() + str(int(time.time())).encode()
+                    MessageSend = COMM_MESSAGE()
+                    MessageSend.iv = iv
+                    MessageSend = self.encryption_in_client(MessageSend, kas, iv, plain_text)
+                    sock.sendall(MessageSend.SerializeToString())
+
+                    MessageRec = COMM_MESSAGE()
+                    data = sock.recv(4096)
+                    MessageRec.ParseFromString(data)
+
+
+                    plain_text = self.decryption_with_timestamp_in_client(MessageRec, kas, iv)
+                    plain_text = plain_text.decode()
+                    if plain_text.split(" ")[0] == "Confirm" and plain_text.split(" ")[1] == src:
+                        client_sk = socket.socket()
+                        client_sk.connect(('127.0.0.1', addr[1]))
+                        # print ("I will use this socket to talk to",src,":", client_sk)
+                        self.socket_from_list[src]=[]
+                        self.socket_from_list[src].append(client_sk)
+                        self.socket_from_list[src].append(kas)
+                        self.socket_from_list[src].append(iv)
+                        # print("I have succeed in setting up connection with", src, "with session key:", kas)
+                        # print("We use this socket to chatting:", sock)
                     else:
-                        print("From:", src, ": ", ret)
+                        print ("The adversary modify the CONFIRM message")
+                else:
+                    print ("N2 puzzle wrong!")
+                    sys.exit(1)
             else:
-
-                if src == None:
-
-                for src, sck in self.socket_list.items():  # for name, age in dictionary.iteritems():  (for Python 2.x)
-                    if age == search_age:
-                        print(name)
-        # sock.close()
+                plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_from_list[src][1], self.socket_from_list[src][2])
+                plain_text = plain_text.decode()
+                print ("From", src,":", plain_text)
 
     def listen(self, temp):
         self.socket_to_client.listen()
@@ -263,29 +324,76 @@ class Client():
             client_thread = threading.Thread(target=self.handle_sock, args=(sock, addr))  # 把sock 加入线程内
             client_thread.start()  # 启动线程
 
-    def client_to_client_send (self, dest, message):
+    def listen_from_existed_connection (self, dest):
+        self.socket_list[dest][3].listen()
+        # print (self.socket_list[dest][3])
+        sock, addr = self.socket_list[dest][3].accept()  # 接受不同client 端的sock .
+        while True:
+            # print ("REVESAL: I have received message!")
+            data = sock.recv(4096)
+            MessageRec = COMM_MESSAGE()
+            MessageRec.ParseFromString(data)
+
+            if (MessageRec.type == COMM_MESSAGE.TYPE.LOGOUT):
+                plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_list[dest][1],
+                                                                      self.socket_list[dest][2])
+                plain_text = plain_text.decode()
+                print("I received log out request")
+                print(plain_text)
+                if (plain_text == "log out"):
+                    MessageSend = COMM_MESSAGE()
+                    MessageSend.type = COMM_MESSAGE.TYPE.CONFIRM
+                    plain_text = 'log out confirmed'.encode() + str(int(time.time())).encode()
+                    MessageSend = self.encryption_in_client(MessageSend, self.socket_list[dest][1],
+                                                            self.socket_list[dest][2], plain_text)
+                    self.socket_list[dest][0].sendall(MessageSend.SerilizeToString())
+                    self.socket_list[dest][0].close()
+
+                    del self.socket_list[dest]
+                    del self.user_online[dest]
+
+            else:
+                plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_list[dest][1],
+                                                                      self.socket_list[dest][2])
+                plain_text = plain_text.decode()
+                print("From", dest, ":", plain_text)
+
+
+    def client_to_client_send (self, dest, message, flag):
         MessageSend = COMM_MESSAGE()
         MessageSend.type = COMM_MESSAGE.TYPE.MESSAGE
         plain_text =  message.encode() + str(int(time.time())).encode()
+
 
         # AES encryption
         padder = padding.PKCS7(128).padder()
         padded_data = padder.update(plain_text)
         padded_data += padder.finalize()
         plain_text_padded = padded_data
-        ## GCM Mode
-        cipher = Cipher(algorithms.AES(self.socket_list[dest][1]), modes.GCM(self.socket_list[dest][2]), backend=default_backend())
-        encryptor = cipher.encryptor()
-        encryptor.authenticate_additional_data(self.authenticate_data)
-        cipher_text = encryptor.update(plain_text_padded) + encryptor.finalize()
-        MessageSend.cipher_text = cipher_text
-        MessageSend.tag = encryptor.tag
 
-        self.socket_list[dest][0].sendall(MessageSend.SerializeToString())
+        if flag == 0:
+            ## GCM Mode
+            cipher = Cipher(algorithms.AES(self.socket_list[dest][1]), modes.GCM(self.socket_list[dest][2]), backend=default_backend())
+            encryptor = cipher.encryptor()
+            encryptor.authenticate_additional_data(self.authenticate_data)
+            cipher_text = encryptor.update(plain_text_padded) + encryptor.finalize()
+            MessageSend.cipher_text = cipher_text
+            MessageSend.tag = encryptor.tag
+            self.socket_list[dest][0].sendall(MessageSend.SerializeToString())
+        else:
+            ## GCM Mode
+            cipher = Cipher(algorithms.AES(self.socket_from_list[dest][1]), modes.GCM(self.socket_from_list[dest][2]), backend=default_backend())
+            encryptor = cipher.encryptor()
+            encryptor.authenticate_additional_data(self.authenticate_data)
+            cipher_text = encryptor.update(plain_text_padded) + encryptor.finalize()
+            MessageSend.cipher_text = cipher_text
+            MessageSend.tag = encryptor.tag
+            self.socket_from_list[dest][0].sendall(MessageSend.SerializeToString())
+        # print ("I have sent message to",dest)
 
-    def decryption_with_timestamp_in_client(self, MessageRec, Kab):
+    def decryption_with_timestamp_in_client(self, MessageRec, Kab, ivtemp):
         #  AES  decryption
-        decryptor = Cipher(algorithms.AES(Kab), modes.GCM(MessageRec.iv, MessageRec.tag),
+        decryptor = Cipher(algorithms.AES(Kab), modes.GCM(ivtemp, MessageRec.tag),
                            backend=default_backend()).decryptor()
         decryptor.authenticate_additional_data(self.authenticate_data)
         decrypted_plain_text = decryptor.update(MessageRec.cipher_text) + decryptor.finalize()
@@ -303,14 +411,14 @@ class Client():
         else:
             sys.exit(1)
 
-    def encryption_in_client(self, Message, Kab, plain_text):
+    def encryption_in_client(self, Message, Kab, ivtemp, plain_text):
         # AES encryption
         padder = padding.PKCS7(128).padder()
         padded_data = padder.update(plain_text)
         padded_data += padder.finalize()
         plain_text_padded = padded_data
         ## GCM Mode
-        cipher = Cipher(algorithms.AES(Kab), modes.GCM(Message.iv), backend=default_backend())
+        cipher = Cipher(algorithms.AES(Kab), modes.GCM(ivtemp), backend=default_backend())
         encryptor = cipher.encryptor()
         encryptor.authenticate_additional_data(self.authenticate_data)
         cipher_text = encryptor.update(plain_text_padded) + encryptor.finalize()
@@ -318,11 +426,17 @@ class Client():
         Message.tag = encryptor.tag
         return Message
 
-    def client_setup_connection (self, dest, message):
+    def client_setup_connection (self, dest):
         client_sk = socket.socket()
         client_sk.connect(('127.0.0.1', int(self.user_online[dest][1])))
         self.socket_list[dest] = []
         self.socket_list[dest].append (client_sk)
+
+        port = client_sk.getsockname()[1]
+        # print ("Port is:", port)
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", port))
 
         #########################
         ### Set up         ######
@@ -334,23 +448,24 @@ class Client():
         MessageSend.ticket = self.user_online[dest][4]
         MessageSend.ticket_tag = self.user_online[dest][5]
         kabtemp = self.user_online[dest][2].encode()
-        MessageSend.iv = self.user_online[dest][3].encode()
+        ivtemp = self.user_online[dest][3].encode()
         y = os.urandom(8)
         x = y.hex()
         N1 = int(x, 16)
         plain_text  = str(N1).encode() + str(int(time.time())).encode()
-        MessageSend = self.encryption_in_client (MessageSend, kabtemp, plain_text)
+        MessageSend = self.encryption_in_client (MessageSend, kabtemp, ivtemp, plain_text)
 
         self.socket_list[dest][0].sendall (MessageSend.SerializeToString())
 
         data = self.socket_list[dest][0].recv(4096)
         MessageRec.ParseFromString(data)
 
-        plain_text = self.decryption_with_timestamp_in_client  (MessageRec, kabtemp)
+        plain_text = self.decryption_with_timestamp_in_client  (MessageRec, kabtemp, ivtemp)
         plain_text = plain_text.decode()
         N1_rec = int(plain_text.split(" ")[0])
         if N1-1 == N1_rec:
             MessageSend = COMM_MESSAGE()
+            MessageSend.type = COMM_MESSAGE.TYPE.CLIENT_TO_CLIENT
             ### Set up the new Kab ###
             alice = DiffieHellman(group=5, key_length=200)
             alice.generate_public_key()
@@ -362,23 +477,28 @@ class Client():
             N2_send = N2_rec - 1
             plain_text = str (N2_send).encode() + str(int(time.time())).encode()
             MessageSend.iv = self.user_online[dest][3].encode()
-            MessageSend = self.encryption_in_client (MessageSend, kabtemp, plain_text)
+            MessageSend = self.encryption_in_client (MessageSend, kabtemp, ivtemp, plain_text)
 
             self.socket_list[dest][0].sendall(MessageSend.SerializeToString())
 
             data = self.socket_list[dest][0].recv(4096)
             MessageRec.ParseFromString(data)
 
-            plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_list[dest][1])
+            plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_list[dest][1], MessageRec.iv)
             plain_text = plain_text.decode()
             if plain_text.split(" ")[0] == "Confirm" and plain_text.split(" ")[1] == dest:
                 self.socket_list[dest].append(MessageRec.iv)
                 plain_text = ("Confirm " + self.client_name).encode() + str(int (time.time())).encode()
                 MessageSend = COMM_MESSAGE()
+                MessageSend.type = COMM_MESSAGE.TYPE.CLIENT_TO_CLIENT
                 MessageSend.iv = self.socket_list[dest][2]
-                MessageSend = self.encryption_in_client (MessageSend, self.socket_list[dest][1], plain_text)
+                self.socket_list[dest].append(server)
+                client_thread_listen_from_existing_connection = threading.Thread(target=self.listen_from_existed_connection, args=(dest,))  # 把sock 加入线程内
+                client_thread_listen_from_existing_connection.start()  # 启动线程
+                MessageSend = self.encryption_in_client (MessageSend, self.socket_list[dest][1],self.socket_list[dest][2], plain_text)
                 self.socket_list[dest][0].sendall(MessageSend.SerializeToString())
-                print ("I have succeed in setting up connection with", dest, "with session key:", self.socket_list[dest][1])
+                # print ("I have succeed in setting up connection with", dest)
+                # print("We use this socket to chatting:", self.socket_list[dest][0])
             else:
                 print ("Set up connection with", dest, "failed!")
                 sys.exit(1)
@@ -387,17 +507,93 @@ class Client():
             print ("N1 verify failed!")
             sys.exit(1)
 
+    def log_out_server (self):
+        self.Message_send = COMM_MESSAGE()
+        self.Message_send.type = COMM_MESSAGE.TYPE.LOGOUT
+        plain_text = 'logout'.encode() + str(int(time.time())).encode()
+        self.encryption(plain_text)
+        self.send_message()
+
+        self.receive_message()
+        if (self.Message_rec.type == COMM_MESSAGE.TYPE.CONFIRM):
+            plain_text = self.decryption_with_timestamp()
+            plain_text = plain_text.decode()
+            # print (plain_text)
+            if plain_text == "confirmed":
+                # print ("Log out from server succeed!")
+                return None
+        print ("Log out from server failed")
+        sys.exit(1)
+
+    def log_out_client (self):
+        # print (self.socket_from_list)
+        # print (self.socket_list)
+        for key in self.socket_list:
+            MessageSend = COMM_MESSAGE()
+            MessageSend.type = COMM_MESSAGE.TYPE.LOGOUT
+            plain_text = 'log out'.encode() + str(int(time.time())).encode()
+            MessageSend = self.encryption_in_client(MessageSend, self.socket_list[key][1], self.socket_list[key][2],plain_text)
+            self.socket_list[key][0].sendall(MessageSend.SerializeToString())
+
+            data = self.socket_list[key][0].recv(4096)
+            MessageRec = COMM_MESSAGE()
+            MessageRec.ParseFromString(data)
+            print ("I received back log out request")
+            if (MessageRec.type == COMM_MESSAGE.TYPE.CONFIRM):
+                plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_list[key][1], self.socket_list[key][2])
+                plain_text = plain_text.decode()
+                if plain_text == "log out confirmed":
+                    self.socket_list[key][0].close()
+                else:
+                    print ("Log out from client failed!")
+                    sys.exit(1)
+            else:
+                print("Log out from client failed!")
+                sys.exit(1)
+
+        for key in self.socket_from_list:
+            MessageSend = COMM_MESSAGE()
+            MessageSend.type = COMM_MESSAGE.TYPE.LOGOUT
+            plain_text = 'log out'.encode() + str(int(time.time())).encode()
+            MessageSend = self.encryption_in_client(MessageSend, self.socket_from_list[key][1], self.socket_from_list[key][2],plain_text)
+            self.socket_from_list[key][0].sendall(MessageSend.SerializeToString())
+
+            data = self.socket_from_list[key][0].recv(4096)
+            MessageRec = COMM_MESSAGE()
+            MessageRec.ParseFromString(data)
+            print("I received back log out request")
+            if (MessageRec.type == COMM_MESSAGE.TYPE.CONFIRM):
+                plain_text = self.plain_text = self.decryption_with_timestamp_in_client(MessageRec, self.socket_from_list[key][1], self.socket_from_list[key][2])
+                plain_text = plain_text.decode()
+                if plain_text == "log out confirmed":
+                    flag = 1
+                    self.socket_from_list[key][0].close()
+                else:
+                    print("Log out from client failed!")
+                    sys.exit(1)
+            else:
+                print("Log out from client failed!")
+                sys.exit(1)
+
+
+
     def talk_with_server(self):
         ## In user_online, it stores users online with port, Kab_temp, ticket
         self.user_online = {}
         ## In socket_list, it stores all socket, Kab, iv Client are talking to
         self.socket_list = {}
+        self.socket_from_list = {}
         listen_thread = threading.Thread(target=test_object.listen, args=(1,))
         listen_thread.start()
 
         while (True):
             self.Message_send = COMM_MESSAGE()
             command = input()
+            if (command == "logout"):
+                self.log_out_server ()
+                self.log_out_client ()
+                print ("You have logged out!")
+                return None
             if (command == "list"):
                 self.Message_send.type = COMM_MESSAGE.TYPE.LIST
                 plain_text = command.encode() + str(int(time.time())).encode()
@@ -415,6 +611,9 @@ class Client():
                 if (len(command.split(" ")) == 3 and "Talk to" in command):
                     dest = command.split(" ")[2]
                     if (dest != self.client_name):
+                        if dest in self.socket_list.keys() or dest in self.socket_from_list.keys():
+                            print("You are now connected with",dest, "Just use 'Send' command!")
+                            continue
                         if (dest not in self.user_online.keys()):
                             print(dest, "is not online now!")
                             continue
@@ -423,18 +622,29 @@ class Client():
                             plain_text = command.encode() + str(int(time.time())).encode()
                             self.encryption(plain_text)
                             self.send_message()
+
+                            self.Message_rec = COMM_MESSAGE()
                             self.receive_message()
-                            plain_text = self.decryption_with_timestamp()
+
+                            decryptor = Cipher(algorithms.AES(self.Kas), modes.GCM(self.iv, self.Message_rec.tag),
+                                               backend=default_backend()).decryptor()
+                            decryptor.authenticate_additional_data(self.authenticate_data)
+                            decrypted_plain_text = decryptor.update(self.Message_rec.cipher_text) + decryptor.finalize()
+
+                            # unpad
+                            unpadder = padding.PKCS7(128).unpadder()
+                            plain_text = unpadder.update(decrypted_plain_text) + unpadder.finalize()
+
                             ticket = self.Message_rec.ticket
                             ticket_tag = self.Message_rec.ticket_tag
                             plain_text = plain_text.decode()
-                            print (plain_text)
+                            # print (plain_text)
                             if dest == plain_text.split(" ")[0]:
                                 for item in plain_text.split(" "):
                                     self.user_online[dest].append(item)
                                 self.user_online[dest].append(ticket)
                                 self.user_online[dest].append(ticket_tag)
-                                print ("Now, u can talk to", dest, "whose port is", int(self.user_online[dest][1]))
+                                print ("Now, u can talk to", dest)
                             else:
                                 print ("Someone change the person I want to talk to!")
                                 continue
@@ -444,35 +654,37 @@ class Client():
                 else:
                     if (command.split(" ")[0] == 'Send' and len(command.split(" ")) >=3):
                         dest = command.split(" ")[1]
-                        message = command.split(" ",2)[2]
-                        if (dest not in self.user_online.keys()):
-                            print ("Sorry, you can't send message to whom is not online!")
+                        if dest == self.client_name:
+                            print ("Sorry, you can't send yourself messages!")
                             continue
+                        message = command.split(" ",2)[2]
+                        if dest in self.socket_list.keys():
+                            self.client_to_client_send(dest, message, 0)
                         else:
-                            if self.user_online[dest] == []:
-                                print ("You must ask server for ticket first!")
-                                continue
+                            if dest in self.socket_from_list.keys():
+                                self.client_to_client_send(dest, message, 1)
                             else:
-                                if dest not in self.socket_list.keys():
-                                    self.client_setup_connection (dest,message)
-                                self.client_to_client_send(dest, message)
+                                if (dest not in self.user_online.keys()):
+                                    print ("Sorry, you can't send message to whom is not online!")
+                                    continue
+                                else:
+                                    if self.user_online[dest] == []:
+                                        print ("You must ask server for ticket first!")
+                                        continue
+                                    else:
+                                        if dest not in self.socket_list.keys():
+                                            self.client_setup_connection (dest)
+                                        self.client_to_client_send(dest, message, 0)
                     else:
                         print ("Please type a correct format!")
                         continue
-            print("Now, I have stored these users with/without port:", self.user_online)
-
-
 
 
 if __name__ == '__main__':
     client_name = input("Please type your username:")
     client_password = getpass("Please type your password:")
     test_object = Client(client_name, client_password)
-    print("The client name and password is", test_object.get_name())
     test_object.client_to_server_login()
     print("Now, send message!")
     test_object.bind_for_listening()
     test_object.talk_with_server()
-
-# send_thread = threading.Thread(target=test_object.send, args=(1,))
-# send_thread.start()
